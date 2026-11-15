@@ -387,6 +387,20 @@ One dim line tells you what was added. It is a guess made by pattern matching, s
 - **`/export [file]`** and **`eon export [number|id]`** write one markdown report per session to `.eon/exports/`: the requests, the plan with each claim's tag and evidence, steps done, commands that ran with exit codes, the diff and the result. Secrets are redacted; read it before you share it.
 - **`eon doctor --fix`** (`--yes` to skip the questions) repairs what it finds: a stale `.git/index.lock`, session locks from an Eon that is gone, a damaged `~/.eon/config.json` or `selectors.json` (kept as `.bak`), a leftover browser lock, a missing browser. It asks before each fix and says "Nothing to fix" when all is well.
 
+## Testing a site (`eon harness`)
+
+`eon harness [site]` runs five short scenarios through the same driver Eon uses, and prints one line each:
+
+| scenario | what it proves |
+|---|---|
+| send-read | a message goes out and its whole reply is read |
+| long-reply | a 400-line reply is read to the end, not cut off |
+| code-block | a fenced JSON block is understood as an action, labels and all |
+| edit-block | an EDIT block arrives with its tabs and quotes unchanged |
+| follow-up | a second message gets its own reply, not the first one again |
+
+If the very first message fails, the rest are skipped instead of making you wait. Exit code 1 when anything failed. The report file holds timings and counts only. `--stand-in` runs the scenarios against the built-in fake pages for every supported site, which is how Eon's own tests check that a change did not break one of them.
+
 ## Moving from Keel
 
 Eon was called Keel. The first time you start it, the old `~/.keel` folder (your login included) and each project's `.keel/` folder (sessions, memory, research, worktrees) are moved to `.eon` automatically. Old `keel/` branches and `keel:` commits still work with `/merge`, `/undo` and `eon -r`. The old `keel` command is gone.

@@ -484,7 +484,10 @@ export class WebChat {
     const click = async (b) => { await b.click({ delay: 30 + Math.random() * 80 }).catch(() => {}); };
     await this.#pause(100, 350);
     if (this.sel.send != null && this.sel.send !== undefined && list(this.sel.send).length) {
-      const b = await this.#sendButton(found.selector);
+      // The Send button wakes up a moment after the text arrives; wait for it instead of falling back to Enter (5 s lost).
+      let b = null;
+      for (const end = Date.now() + (this.buttonMissing ? 0 : 1500); !b && Date.now() <= end; ) { b = await this.#sendButton(found.selector); if (!b && Date.now() < end) await this.#nap(100); }
+      this.buttonMissing = !b; // if the configured button is not there at all, do not wait for it again on every message
       if (b) { await click(b); if (await this.#sent(found.loc, before, text, 5000)) return 'button'; }
     }
     await found.loc.press('Enter').catch(() => {});

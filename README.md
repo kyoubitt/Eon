@@ -51,6 +51,15 @@ Useful commands: `/plan` `/diff` `/undo` `/usage` `/raw` `/export` `/model` `/co
 
 Maintenance: `eon update` (newest version; Eon also mentions a new one at most once a day, turn off with `/config update-check off`), `eon doctor --fix` (repairs stale locks, damaged settings, a missing browser), `eon export` (a session as a markdown report).
 
+## Testing a site
+
+```bash
+eon harness deepseek     # five short test messages on the real site; pass/fail for each, a report to paste
+eon harness --stand-in   # the same five scenarios against built-in fake pages for all 8 sites (no login)
+```
+
+The five scenarios are: send and read a reply, a long reply (400 lines), a code block read as an action, an edit block with tabs and quotes, and a follow-up in the same chat. Each line says what is wrong and how to fix it. The report (`~/.eon/harness-<site>.txt`) holds timings and counts only, never the page's text.
+
 ## Honest notes
 
 - It drives real chat pages in a browser, so it can break when a site changes. `eon teach <site>`, `eon inspect <site>` and `eon doctor --report` help fix that.

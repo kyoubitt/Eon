@@ -343,3 +343,60 @@ test('rewrite through a real browser: the restated task is sent first, shown, ac
     assert.match(ui.lines.join('\n'), /Eon understood your request as:[\s\S]*GOAL: Correct the misspelled name/);
   } finally { await closeBrowser(); await fake.close(); }
 });
+
+// ---- harness ----
+
+const { runHarness, standInReply, writeReport, formatRow, summary, SCENARIOS } = await import('../src/harness.js');
+
+async function harnessOn(name, { broken = null, extra = {}, replyMs = 30000 } = {}) {
+  const fake = await startFakeChat({ stream: true, ...PROFILES[name], ...extra }, (text) => standInReply(text, broken));
+  const quiet = new ScriptedUI((q) => (/skip/i.test(q) ? 's' : ''));
+  const chat = new WebChat(name, { ui: quiet, minGapMs: 0, jitterMs: 0, stableMs: 400, firstLookMs: 4000, selectors: { url: fake.url } });
+  try { await chat.newChat(); return await runHarness({ chat, replyMs }); } finally { await closeBrowser(); await fake.close(); }
+}
+
+for (const name of Object.keys(PROFILES)) {
+  test(`harness: all five scenarios pass on the ${name} stand-in`, { timeout: 150000 }, async (t) => {
+    if (!chromium) return t.skip('Playwright is not installed here');
+    fs.rmSync(path.join(home, '.eon', 'selectors.json'), { force: true });
+    const results = await harnessOn(name);
+    assert.deepEqual(results.map((r) => r.name), SCENARIOS.map((s) => s.name));
+    assert.deepEqual(results.filter((r) => !r.ok).map((r) => `${r.name}: ${r.detail}`), []);
+  });
+}
+
+test('harness: a site that cuts replies, rewrites code or repeats itself fails the right line with a plain fix', { timeout: 200000 }, async (t) => {
+  if (!chromium) return t.skip('Playwright is not installed here');
+  const by = (rs) => Object.fromEntries(rs.map((r) => [r.name, r]));
+  let r = by(await harnessOn('deepseek', { broken: 'truncate' }));
+  assert.equal(r['long-reply'].ok, false);
+  assert.match(r['long-reply'].detail, /cut short: read 250 lines, last number 250 of 400/);
+  assert.match(r['long-reply'].fix, /finished too early/);
+  assert.equal(r['send-read'].ok, true, 'the other lines are not affected');
+  r = by(await harnessOn('deepseek', { broken: 'mangle' }));
+  assert.equal(r['edit-block'].ok, false);
+  assert.match(r['edit-block'].detail, /tabs or quotes inside it were changed|no edit was found/);
+  r = by(await harnessOn('deepseek', { broken: 'repeat' }));
+  assert.equal(r['follow-up'].ok, false);
+  assert.match(r['follow-up'].detail, /read the first reply again/);
+  assert.match(formatRow(r['follow-up']), /✗ follow-up[\s\S]*to fix it: Eon cannot tell the new reply from the old ones/);
+});
+
+test('harness: a page that never takes the message fails clearly and quickly, and the report holds no page text', { timeout: 200000 }, async (t) => {
+  if (!chromium) return t.skip('Playwright is not installed here');
+  const results = await harnessOn('deepseek', { extra: { never: true }, replyMs: 60000 });
+  assert.equal(results[0].ok, false);
+  assert.match(results[0].detail, /skipped|did not send|no reply/i);
+  assert.match(results[0].fix, /doctor --report/);
+  assert.equal(results.length, 5);
+  assert.ok(results.slice(1).every((r) => r.skipped && /first message did not work/.test(r.detail)), 'the rest are skipped, not waited for');
+  assert.match(formatRow(results[1]), /– long-reply/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-harness-'));
+  const file = writeReport(dir, 'deepseek', [{ name: 'send-read', ok: true, ms: 1234, detail: 'a message went out and its reply was read' }, { name: 'follow-up', ok: false, ms: 5000, detail: 'the new reply was not found', fix: 'x' }]);
+  const text = fs.readFileSync(file, 'utf8');
+  assert.match(text, /PASS {2}send-read {3}1\.2 s/);
+  assert.match(text, /FAIL {2}follow-up/);
+  assert.match(text, /deepseek: 1 of 2 scenarios passed, 1 failed/);
+  assert.doesNotMatch(text, /harness-ok|"action"|<<<<<<</, 'no page text, only counts and timings');
+  assert.match(summary('x', [{ ok: true }]), /This site works with Eon/);
+});

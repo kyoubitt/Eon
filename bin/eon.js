@@ -22,6 +22,7 @@ import { checkImage } from '../src/vision.js';
 import { McpHub, McpServer, PRESETS, addMcpServer, removeMcpServer } from '../src/mcp.js';
 import { loadAgents } from '../src/agents.js';
 import { loadSkills, newSkill } from '../src/skills.js';
+import { runHarness, formatRow, summary, writeReport, standInReply } from '../src/harness.js';
 import { runFix } from '../src/fix.js';
 import { exportSession } from '../src/export.js';
 import { checkForUpdate, runUpdate, currentVersion } from '../src/update.js';
@@ -79,6 +80,7 @@ Usage
   eon setup-local                use a model on your own computer (Ollama) instead of a website
   eon inspect <site>             write ~/.eon/inspect-<site>.txt: the page's structure, no text, to paste for help
   eon mcp list|add|remove|test   connect MCP servers (tools the model can use after you allow them)
+  eon harness [site]             test a chat site with five short scenarios; prints pass/fail and a report to paste
   eon export [number|id]         save a past session as a markdown report
   eon update                     update Eon to the latest version
   eon first-run [site]           check this computer: Node, git, browser, login, folder
@@ -159,6 +161,7 @@ function parse(argv) {
     else if (a === '--stdin') opts.stdin = true;
     else if (a === '--report') opts.report = true;
     else if (a === '--fix') opts.fix = true;
+    else if (a === '--stand-in') opts.standIn = true;
     else if (a === '--fast') opts.fast = true;
     else if (a === '--no-brief') opts.noBrief = true;
     else if (a === '--rewrite') opts.rewrite = true;
@@ -249,6 +252,42 @@ async function siteCommands(first, rest, opts) {
     } else console.log(`${report}\n\nTo save this as a file you can share: eon doctor --report`);
     return;
   }
+  if (first === 'harness') {
+    const paint = { green: color.green, red: color.red, dim: color.dim };
+    let failed = 0;
+    if (opts.standIn) {
+      // The built-in fake sites, one per supported chat: proves the driver and the scenarios without a login.
+      process.env.EON_HEADLESS ??= '1';
+      let fakes;
+      try { fakes = await import('../support/fake-chat.js'); } catch { console.log('The stand-in sites are not part of this install (the support folder is missing).'); process.exitCode = 1; return; }
+      const names = rest[0] ? [rest[0]] : Object.keys(fakes.PROFILES);
+      for (const name of names) {
+        const fake = await fakes.startFakeChat({ stream: true, ...fakes.PROFILES[name] }, (text) => standInReply(text));
+        const quiet = { print() {}, ask: async (q) => (/skip/i.test(q) ? 's' : ''), close() {} };
+        const chat = new WebChat(name, { ui: quiet, minGapMs: 0, jitterMs: 0, stableMs: 400, firstLookMs: 4000, selectors: { url: fake.url } });
+        try {
+          await chat.newChat();
+          console.log(`${color.bold(`stand-in ${name}`)}`);
+          const results = await runHarness({ chat, replyMs: 30000, onResult: (r) => console.log(formatRow(r, paint)) });
+          failed += results.filter((r) => !r.ok && !r.skipped).length;
+          console.log(`  ${summary(name, results)}\n`);
+        } finally { await closeBrowser().catch(() => {}); await fake.close(); }
+      }
+    } else {
+      const site = rest[0] ?? 'deepseek';
+      console.log(`Testing ${site} with five short messages (about a minute or two). A browser window opens; log in if asked.\n`);
+      const chat = new WebChat(site, { ui });
+      try {
+        await chat.newChat();
+        const results = await runHarness({ chat, onResult: (r) => console.log(formatRow(r, paint)) });
+        failed += results.filter((r) => !r.ok && !r.skipped).length;
+        const file = writeReport(EON_HOME, site, results);
+        console.log(`\n${summary(site, results)}\nReport (timings only, no page text): ${file.replace(os.homedir(), '~')}${failed ? '\nPaste it, with ~/.eon/inspect-' + site + '.txt from "eon inspect ' + site + '", to get it fixed.' : ''}`);
+      } finally { await closeBrowser().catch(() => {}); ui.close(); }
+    }
+    process.exitCode = failed ? 1 : 0;
+    return;
+  }
   if (first === 'export') {
     const r = exportSession(fs.realpathSync(process.cwd()), rest[0] ?? '1');
     console.log(`Saved ${path.relative(process.cwd(), r.file)}`);
@@ -325,7 +364,7 @@ async function main() {
     return;
   }
   if (first === 'gui' || first === 'web') { console.log('There is no gui any more; just run eon. It works inside the terminal.'); return; }
-  if (['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export'].includes(first)) return siteCommands(first, rest, opts);
+  if (['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export', 'harness'].includes(first)) return siteCommands(first, rest, opts);
 
   // One word that is almost a command ("eon udpate") is probably a typo, not a task.
   if (opts.words.length === 1 && /^[a-z-]{3,12}$/.test(first)) {
