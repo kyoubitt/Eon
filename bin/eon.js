@@ -21,6 +21,7 @@ import { readStores, teach, forget } from '../src/store.js';
 import { checkImage } from '../src/vision.js';
 import { McpHub, McpServer, PRESETS, addMcpServer, removeMcpServer } from '../src/mcp.js';
 import { loadAgents } from '../src/agents.js';
+import { loadSkills, newSkill } from '../src/skills.js';
 import { runFix } from '../src/fix.js';
 import { exportSession } from '../src/export.js';
 import { checkForUpdate, runUpdate, currentVersion } from '../src/update.js';
@@ -89,6 +90,7 @@ Options
   --allow "<cmd>"       a command that may run without asking, e.g. --allow "npm test" (repeatable)
   --allow-host <host>   a documentation site that may be fetched without asking (repeatable)
   --in-place            use a new branch in this checkout instead of a worktree
+  --fast                quick level + accept mode: fewer round trips for small jobs
   --stdin               add text piped into eon to the task, e.g. git diff | eon -p "review this" --stdin
   --no-splash           skip the intro screen (or: /config splash off)
   --pace slow|normal    how human-paced the browser is (default normal)
@@ -111,7 +113,7 @@ const COMMANDS = [
   ['/project ', 'switch to another folder'], ['/status', 'mode, models, branch and plan state'],
   ['/output', 'show the full output of the last command'], ['/init', 'create EON.md with this project\'s commands and conventions'], ['/pr', 'a pull-request description for this session'],
   ['/usage', 'estimated tokens used, per model'], ['/raw', 'the last message Eon sent and the model\'s raw reply'],
-  ['/export', 'save this session as a markdown report'], ['/check', 'check this computer and the chat site'], ['/image ', 'attach a picture to your next message'], ['/mcp', 'MCP servers you connected, and the tools you always allow'], ['/agents', 'sub-agents defined in .eon/agents'],
+  ['/skills', 'recipes the model can follow: /skills new <name>'], ['/export', 'save this session as a markdown report'], ['/check', 'check this computer and the chat site'], ['/image ', 'attach a picture to your next message'], ['/mcp', 'MCP servers you connected, and the tools you always allow'], ['/agents', 'sub-agents defined in .eon/agents'],
   ['/bell', 'toggle the sound when Eon needs you'], ['/quit', 'leave Eon'],
 ];
 const helpText = () => `${color.bold('Commands')}\n${COMMANDS.map(([c, d]) => `  ${c.trim().padEnd(14)} ${d}`).join('\n')}\n\n${color.dim('Your next message continues the current session. Shift+Tab changes the mode, Esc interrupts, Ctrl+C twice leaves.')}`;
@@ -130,6 +132,7 @@ function parse(argv) {
     else if (a === '--stdin') opts.stdin = true;
     else if (a === '--report') opts.report = true;
     else if (a === '--fix') opts.fix = true;
+    else if (a === '--fast') opts.fast = true;
     else if (a === '--yes') opts.yes = true;
     else if (a === '--plain' || a === '-p') opts.plain = true;
     else if (a === '--continue' || a === '-c') opts.cont = true;
@@ -147,6 +150,8 @@ function parse(argv) {
     } else if (a.startsWith('-') && a.length > 1) throw new Error(`unknown option ${a}`);
     else opts.words.push(a);
   }
+  // --fast: fewer round trips for small jobs (small edits skip the plan; you approve the plan once if one is made, edits go in).
+  if (opts.fast) { opts.level = 'quick'; if (opts.mode === 'guided') opts.mode = 'accept'; }
   if (opts.pace) process.env.EON_PACE = opts.pace;
   if (!MODES.includes(opts.mode)) throw new Error(`unknown mode "${opts.mode}" (use ${MODES.join(', ')})`);
   if (!LEVELS.includes(opts.level)) throw new Error(`unknown level "${opts.level}" (use ${LEVELS.join(', ')})`);
@@ -577,6 +582,11 @@ async function main() {
         pendingPictures.push(file);
         return ui.print(`Picture added: ${path.basename(file)}. It goes with your next message${firstOf(planSpec()) === 'deepseek' ? ` (DeepSeek cannot see pictures, so ${visionSpec()} will describe it)` : ''}.`);
       }
+      case '/skills': {
+        if (args[0] === 'new' && args[1]) { try { const f = newSkill(root, args[1]); return ui.print(`Made ${path.relative(root, f)}. Edit it, then use it with /${args[1]} <what to do>.`); } catch (e) { return ui.print(color.red(e.message)); } }
+        const all = [...(runtime?.skills ?? loadSkills(root)).values()];
+        return say('Skills', `${all.map((k) => `  /${k.name.padEnd(16)} ${k.description} ${color.dim(`(${k.source})`)}`).join('\n')}\n${color.dim('  Use one: /<name> <what to do>. Make your own: /skills new <name>')}`);
+      }
       case '/export': {
         const id = runtime?.id ?? listSessions(root)[0]?.id;
         if (!id) return ui.print('No session to export yet.');
@@ -732,9 +742,12 @@ async function main() {
     for (;;) {
       if (!task) {
         if (!runtime) idle();
-        const line = await ui.ask('', { kind: 'task', placeholder: runtime ? 'Reply to continue this session · /new for a fresh one' : 'Try "fix the failing login test"' });
+        let line = await ui.ask('', { kind: 'task', placeholder: runtime ? 'Reply to continue this session · /new for a fresh one' : 'Try "fix the failing login test"' });
         if (!line) continue;
         if (line === '/quit' || line === '/exit') break;
+        // "/fix-bug the login test fails" runs a skill: the model is told to load it first.
+        const sk = /^\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(line);
+        if (sk && !COMMANDS.some(([c]) => c.trim() === `/${sk[1]}`) && (runtime?.skills ?? loadSkills(root)).has(sk[1].toLowerCase())) line = `Use the skill "${sk[1].toLowerCase()}" for this: ${sk[2]?.trim() || '(see the skill; ask me if something is unclear)'}`;
         // Only a known command is a command. "/src/app.js is broken" is a message, not a command.
         if (isCommand(line, COMMANDS)) {
           try { await command(line); } catch (e) { ui.print(color.red(e.message)); }

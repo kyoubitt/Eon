@@ -361,6 +361,12 @@ Attach a picture with `@screenshot.png` in your message, or `/image path` before
 
 The model has three actions for this: `look` (ask the helper one precise question about a picture, for example "what colour is the Save button?"), `screenshot` (a picture of a web page, taken with a browser; localhost is free, other addresses ask you first) and `inspect_page` (the page's elements with their sizes and colours as text, which a text-only model reads more exactly than any description of a picture).
 
+## Skills and fast mode
+
+A skill is a folder with a `SKILL.md`: a `name`, a one-line `description` saying when to use it, then the steps. Eon looks in `.eon/skills/` (this project), `~/.eon/skills/` (you) and its own `skills/` (built in); a project skill beats yours, which beats a built-in one. The model is shown only the names and one-liners; when a task matches it sends a `skill` action and receives the steps. You can also run one yourself with `/<name> <what to do>`. `/skills` lists them, `/skills new <name>` makes a starter file. A skill is guidance only: the plan gate and permissions still apply.
+
+`eon --fast` is `--level quick --mode accept`: edits under 20 lines in one file need no plan, and when a plan is needed you approve it once. It does not shorten the pauses between messages; that is `--pace`, and a human-like pace is part of not tripping a site's checks.
+
 ## Updating, exporting and repairing
 
 - **`eon update`** updates Eon in place: a git copy is pulled, anything else is replaced from GitHub's download, never touching `node_modules` or `.eon`. At most once a day Eon asks GitHub which version is newest (a plain request, nothing about you is sent) and prints one line if yours is older. Stop it with `/config update-check off` or `EON_NO_UPDATE_CHECK=1`. It needs the repository to be public.

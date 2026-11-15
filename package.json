@@ -1,6 +1,6 @@
 {
   "name": "eon-agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A coding agent that runs on free web chats (no API key) and enforces a plan gate.",
   "type": "module",
   "bin": {
@@ -26,7 +26,8 @@
     "examples/*.png",
     "install.sh",
     "install.ps1",
-    "install.bat"
+    "install.bat",
+    "skills"
   ],
   "repository": {
     "type": "git",

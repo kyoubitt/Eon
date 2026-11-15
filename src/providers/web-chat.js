@@ -415,7 +415,7 @@ export class WebChat {
       const quiet = Date.now() - since;
       // A reply that ends on a closed action block is almost certainly finished, so it needs less quiet.
       const closed = /\{\s*"action"|^[ \t]*(EDIT|WRITE)\b/m.test(text) && /(\}|```|>>>>>>>[ \t]*(REPLACE|END))\s*$/.test(text.trim());
-      if (!text || quiet < (closed && !thinking ? Math.min(this.stableMs, 800) : this.stableMs) || (await this.#generating())) continue;
+      if (!text || quiet < (closed && !thinking ? Math.min(this.stableMs, list(this.sel.stop).length ? 500 : 800) : this.stableMs) || (await this.#generating())) continue;
       if (thinking && quiet < 90000) continue; // the last block is a thinking block: the answer is still to come
       if (!looksComplete(text) && quiet < 20000) continue; // a pause in the middle of a code block is not the end
       return text;

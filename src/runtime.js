@@ -12,6 +12,7 @@ import { Hooks } from './hooks.js';
 import { McpHub, capResult } from './mcp.js';
 import { checkImage, describeImage, takeShot, inspectUrl } from './vision.js';
 import { loadAgents, limitWords } from './agents.js';
+import { loadSkills } from './skills.js';
 import { isRepo, hasCommits, isDirty, excludeEonDir, startTaskBranch, commitAll, fileTree, listFiles, tagCheckpoint, undoLastCommit } from './git.js';
 import { Store, taskId, score } from './store.js';
 import { color, TAG, bar } from './ui.js';
@@ -31,7 +32,7 @@ const TOOL_LABEL = {
   run: (a) => ['Run', a.cmd], fetch_doc: (a) => ['Fetch', a.url], research: (a) => ['Research', a.question],
   recall: (a) => ['Recall', a.id ?? a.query], edit_file: (a) => ['Edit', a.path], write_file: (a) => ['Write', a.path],
   verify: (a) => ['Verify', `${a.claim} against ${a.run}`], step_done: (a) => ['Step done', a.step], lesson: (a) => ['Lesson', a.mistake],
-  remember: (a) => ['Remember', a.text], delegate: (a) => ['Delegate', a.task], look: (a) => ['Look', a.image], screenshot: (a) => ['Screenshot', a.url], inspect_page: (a) => ['Inspect', a.url], mcp_describe: (a) => ['MCP', `${a.server}${a.tool ? `.${a.tool}` : ''}`], mcp_call: (a) => ['MCP call', `${a.server}.${a.tool}`],
+  remember: (a) => ['Remember', a.text], delegate: (a) => ['Delegate', a.task], skill: (a) => ['Skill', a.name], look: (a) => ['Look', a.image], screenshot: (a) => ['Screenshot', a.url], inspect_page: (a) => ['Inspect', a.url], mcp_describe: (a) => ['MCP', `${a.server}${a.tool ? `.${a.tool}` : ''}`], mcp_call: (a) => ['MCP call', `${a.server}.${a.tool}`],
 };
 
 function summarise(action, text) {
@@ -69,6 +70,7 @@ export class Runtime {
     };
     Object.assign(this, { resume, tasks: [], root: fs.realpathSync(root), provider, ui, reviewer, researcher, allow, allowHosts: new Set(allowHosts), fetcher, mode, level, inPlace, noGit, backup: null, usage: {}, agentFactory, visionFactory, visionHelper: null, pendingImages: [], inputImages: [], isChild, budgetChars, maxTurns, child: null, delegations: 0, mcpAllowed: new Set() });
     this.agents = loadAgents(this.root);
+    this.skills = loadSkills(this.root);
     this.mcp = new McpHub(this.root);
     this.hooks = isChild ? null : new Hooks(this.root, { auto: mode === 'autonomous', confirm: async (q) => yes(await this.#confirm(q, 'n')) });
     // One model may plan and another build. With a single model both roles are the same object.
@@ -470,7 +472,7 @@ Tool result ids up to r${this.n} exist and can still be used as pointers. Re-rea
         project: this.store.projectNotes(),
         instructions: this.memoryText(),
         detected: describeCommands(detectCommands(this.cwd)),
-        agents: this.isChild ? [] : [...this.agents.values()], mcp: this.isChild ? [] : this.mcp.names,
+        agents: this.isChild ? [] : [...this.agents.values()], skills: this.isChild ? [] : [...this.skills.values()].slice(0, 20), mcp: this.isChild ? [] : this.mcp.names,
         tree: files ? fileTree(this.cwd, files) : '(not listed because the project is large; use list_dir and search)',
         map: budget ? repoMap(this.cwd, listFiles(this.cwd), budget) : '',
       });
@@ -640,6 +642,12 @@ Tool result ids up to r${this.n} exist and can still be used as pointers. Re-rea
         const ok = yes(await this.#confirm(`Save to project notes: "${a.text}"? [y/n] `));
         if (ok) this.store.remember(String(a.text));
         return { text: ok ? 'Saved to project notes.' : 'The user declined to save this.' };
+      }
+      case 'skill': {
+        const k = this.skills.get(String(a.name ?? '').toLowerCase());
+        if (!k) return { text: `ERROR: there is no skill "${a.name}". Skills: ${[...this.skills.keys()].join(', ') || 'none'}.` };
+        this.#note(color.cyan(`  skill ${k.name}`));
+        return { text: `SKILL ${k.name} (${k.source}). Follow these steps; they are guidance from the user, but the plan gate and permissions still apply.\n${k.body}` };
       }
       case 'delegate': return this.#delegate(a);
       case 'look': return this.#look(a);

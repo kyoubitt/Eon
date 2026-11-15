@@ -1968,3 +1968,44 @@ test('doctor --fix repairs stale locks, damaged settings and a missing home, ask
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-fix-bare-'));
   assert.deepEqual(findProblems({ root, home: bare, chrome: () => 'x', alive: () => true }).map((p) => p.id), ['home']);
 });
+
+// ---- skills ----
+
+test('skills: built-in, yours and the project\'s are found in that order of priority, listed to the model, loaded on request', async () => {
+  const { loadSkills, newSkill } = await import('../src/skills.js');
+  const root = tempRepo();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-skill-home-'));
+  const mk = (dir, name, text) => { fs.mkdirSync(path.join(dir, name), { recursive: true }); fs.writeFileSync(path.join(dir, name, 'SKILL.md'), text); };
+  const builtIn = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-skill-bi-'));
+  mk(builtIn, 'fix-bug', '---\nname: fix-bug\ndescription: built in\n---\nBuilt in steps');
+  mk(builtIn, 'extra', '---\ndescription: from the folder name\n---\nExtra steps');
+  mk(path.join(home, '.eon', 'skills'), 'fix-bug', '---\nname: fix-bug\ndescription: mine\n---\nMy steps');
+  mk(path.join(root, '.eon', 'skills'), 'deploy', '---\nname: deploy\ndescription: ship it\n---\n1. run the tests\n2. tag');
+  mk(path.join(root, '.eon', 'skills'), 'broken', 'no steps here but also no front matter');
+  fs.mkdirSync(path.join(root, '.eon', 'skills', 'empty'), { recursive: true }); // no SKILL.md: ignored
+  const skills = loadSkills(root, { home, builtIn });
+  assert.deepEqual([...skills.keys()].sort(), ['broken', 'deploy', 'extra', 'fix-bug']);
+  assert.equal(skills.get('fix-bug').description, 'mine');
+  assert.equal(skills.get('fix-bug').source, 'yours');
+  assert.equal(skills.get('extra').name, 'extra');
+  assert.equal(skills.get('deploy').source, 'this project');
+  // the model sees names and one-liners, then loads one
+  const saved = { ...process.env }; Object.assign(process.env, { HOME: home, USERPROFILE: home });
+  try {
+    const seen = [];
+    const provider = new MockProvider([block({ action: 'skill', name: 'deploy' }), (m) => { seen.push(m); return block({ action: 'skill', name: 'nope' }); }, (m) => { seen.push(m); return block({ action: 'done', summary: 'x' }); }]);
+    await new Runtime({ root, provider, ui: new ScriptedUI(() => 'y'), mode: 'research' }).run('ship it');
+    assert.match(provider.sent[0], /SKILLS \(recipes\)[^\n]*deploy: ship it/);
+    assert.doesNotMatch(provider.sent[0], /1\. run the tests/, 'bodies are not in the first message');
+    assert.match(seen[0], /SKILL deploy \(this project\)[\s\S]*1\. run the tests\n2\. tag/);
+    assert.match(seen[1], /there is no skill "nope"/);
+  } finally { for (const k of Object.keys(process.env)) delete process.env[k]; Object.assign(process.env, saved); }
+  // a new skill is a starter file; the name is checked and nothing is overwritten
+  const f = newSkill(root, 'my-skill');
+  assert.match(fs.readFileSync(f, 'utf8'), /name: my-skill/);
+  assert.throws(() => newSkill(root, 'my-skill'), /already exists/);
+  assert.throws(() => newSkill(root, '../evil'), /letters, digits/);
+  // the shipped skills are all valid
+  const shipped = loadSkills(root, { home: fs.mkdtempSync(path.join(os.tmpdir(), 'eon-x-')) });
+  for (const n of ['fix-bug', 'add-tests', 'review-changes', 'explain-code', 'refactor-safely']) assert.ok(shipped.has(n) && shipped.get(n).body.length > 100 && shipped.get(n).source === 'built in', n);
+});
