@@ -1,11 +1,12 @@
 name: release
-# Run it from the Actions tab ("Run workflow"), or push a tag like v0.1.0. It builds the zip, publishes a
-# GitHub release named after the version in package.json (the tag is created for you), and publishes the
-# package to GitHub Packages as @<owner>/eon.
+# Runs on every push to main (and by hand from the Actions tab). It does nothing if this version is already
+# published. To make a new release, raise "version" in package.json and push.
+#   - a GitHub release named after the version, with eon.zip attached (the tag is created for you)
+#   - the package on GitHub Packages as @<owner>/eon
 on:
-  workflow_dispatch:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -13,13 +14,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Build the zip (files at the top level, so Windows "Extract All" does not nest a folder)
-        run: git archive --format=zip -o eon.zip HEAD
-      - name: Create the release
+      - name: Create the release if this version has none yet
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="v$(node -p "require('./package.json').version")"
+          if gh release view "$VERSION" >/dev/null 2>&1; then echo "$VERSION is already released"; exit 0; fi
+          git archive --format=zip -o eon.zip HEAD
           gh release create "$VERSION" eon.zip --target "$GITHUB_SHA" --title "Eon $VERSION" --generate-notes
   package:
     runs-on: ubuntu-latest
@@ -33,8 +34,12 @@ jobs:
           node-version: 20
           registry-url: https://npm.pkg.github.com
           scope: '@${{ github.repository_owner }}'
-      - name: Name the package for GitHub Packages
-        run: npm pkg set name="@${GITHUB_REPOSITORY_OWNER,,}/eon"
-      - run: npm publish
+      - name: Publish this version to GitHub Packages if it is not there yet
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME="@${GITHUB_REPOSITORY_OWNER,,}/eon"
+          npm pkg set name="$NAME"
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then echo "$NAME@$VERSION is already published"; exit 0; fi
+          npm publish
