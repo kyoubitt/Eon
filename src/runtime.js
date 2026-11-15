@@ -644,6 +644,7 @@ Tool result ids up to r${this.n} exist and can still be used as pointers. Re-rea
         return { text: ok ? 'Saved to project notes.' : 'The user declined to save this.' };
       }
       case 'skill': {
+        if (String(a.name).toLowerCase() === 'list') return { text: `SKILLS\n${[...this.skills.values()].map((s) => `- ${s.name}: ${s.description} (${s.source})`).join('\n')}` };
         const k = this.skills.get(String(a.name ?? '').toLowerCase());
         if (!k) return { text: `ERROR: there is no skill "${a.name}". Skills: ${[...this.skills.keys()].join(', ') || 'none'}.` };
         this.#note(color.cyan(`  skill ${k.name}`));

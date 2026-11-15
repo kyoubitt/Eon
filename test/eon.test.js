@@ -1993,12 +1993,14 @@ test('skills: built-in, yours and the project\'s are found in that order of prio
   const saved = { ...process.env }; Object.assign(process.env, { HOME: home, USERPROFILE: home });
   try {
     const seen = [];
-    const provider = new MockProvider([block({ action: 'skill', name: 'deploy' }), (m) => { seen.push(m); return block({ action: 'skill', name: 'nope' }); }, (m) => { seen.push(m); return block({ action: 'done', summary: 'x' }); }]);
+    const provider = new MockProvider([block({ action: 'skill', name: 'list' }), (m) => { seen.push(m); return block({ action: 'skill', name: 'deploy' }); }, (m) => { seen.push(m); return block({ action: 'skill', name: 'nope' }); }, (m) => { seen.push(m); return block({ action: 'done', summary: 'x' }); }]);
     await new Runtime({ root, provider, ui: new ScriptedUI(() => 'y'), mode: 'research' }).run('ship it');
-    assert.match(provider.sent[0], /SKILLS \(recipes\)[^\n]*deploy: ship it/);
+    assert.match(provider.sent[0], /SKILLS \(recipes\): [^\n]*deploy[^\n]*"list"/);
+    assert.doesNotMatch(provider.sent[0], /deploy: ship it/, 'descriptions are not in the first message');
     assert.doesNotMatch(provider.sent[0], /1\. run the tests/, 'bodies are not in the first message');
-    assert.match(seen[0], /SKILL deploy \(this project\)[\s\S]*1\. run the tests\n2\. tag/);
-    assert.match(seen[1], /there is no skill "nope"/);
+    assert.match(seen[0], /SKILLS\n[\s\S]*- deploy: ship it \(this project\)/);
+    assert.match(seen[1], /SKILL deploy \(this project\)[\s\S]*1\. run the tests\n2\. tag/);
+    assert.match(seen[2], /there is no skill "nope"/);
   } finally { for (const k of Object.keys(process.env)) delete process.env[k]; Object.assign(process.env, saved); }
   // a new skill is a starter file; the name is checked and nothing is overwritten
   const f = newSkill(root, 'my-skill');
@@ -2007,5 +2009,14 @@ test('skills: built-in, yours and the project\'s are found in that order of prio
   assert.throws(() => newSkill(root, '../evil'), /letters, digits/);
   // the shipped skills are all valid
   const shipped = loadSkills(root, { home: fs.mkdtempSync(path.join(os.tmpdir(), 'eon-x-')) });
-  for (const n of ['fix-bug', 'add-tests', 'review-changes', 'explain-code', 'refactor-safely', 'ui-work']) assert.ok(shipped.has(n) && shipped.get(n).body.length > 100 && shipped.get(n).source === 'built in', n);
+  const folders = fs.readdirSync(path.resolve('skills'));
+  assert.ok(folders.length >= 17, 'the shipped set');
+  for (const n of folders) {
+    const k = shipped.get(n);
+    assert.ok(k && k.source === 'built in', `${n} loads`);
+    assert.equal(k.name, n, `${n}: the name matches its folder`);
+    assert.ok(k.body.length > 150 && k.body.length < 2500, `${n}: a real but short recipe`);
+    assert.ok(k.description.length > 20 && k.description.length <= 120, `${n}: a one-line description`);
+    assert.doesNotMatch(k.body, /claude|anthropic/i, `${n}: no tool attribution`);
+  }
 });
