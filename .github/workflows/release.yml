@@ -1,0 +1,36 @@
+name: release
+# Push a tag like v0.1.0 and this builds the zip, publishes a GitHub release with it,
+# and publishes the package to GitHub Packages as @<owner>/eon.
+on:
+  push:
+    tags: ['v*']
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the zip (files at the top level, so Windows "Extract All" does not nest a folder)
+        run: git archive --format=zip -o eon.zip HEAD
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" eon.zip --title "Eon $GITHUB_REF_NAME" --generate-notes
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: '@${{ github.repository_owner }}'
+      - name: Name the package for GitHub Packages
+        run: npm pkg set name="@${GITHUB_REPOSITORY_OWNER,,}/eon"
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
