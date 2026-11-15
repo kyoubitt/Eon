@@ -57,4 +57,4 @@ Full guide: [docs/guide.md](docs/guide.md) (every command, mode, setting and lim
 npm test      # unit tests; browser tests run when Playwright is installed
 ```
 
-MIT license.
+Licensed under the [GNU AGPL v3](LICENSE) (or later): you can use, change and share Eon freely, but if you distribute it or run a modified version as a network service, you must share your source under the same license.
