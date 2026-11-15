@@ -1,18 +1,27 @@
 <p align="center"><img src="assets/logo.png" width="120" alt="Eon"></p>
 
-# Eon
+<h1 align="center">Eon</h1>
 
-[![tests](https://github.com/kyoubitt/eon/actions/workflows/ci.yml/badge.svg)](https://github.com/kyoubitt/eon/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/kyoubitt/eon)](https://github.com/kyoubitt/eon/releases) [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+<p align="center"><b>A coding agent for your terminal that runs on free web chats.</b><br>No API key. It plans before it edits, and every claim carries its evidence.</p>
 
-A coding agent for your terminal that runs on **free web chats** (DeepSeek, Gemini, ChatGPT, Claude, Qwen, Mistral, Grok, Kimi, or any site you add). No API key. The model does the thinking; a local program does the acting and enforces the rules. **Eon plans before it edits.**
+<p align="center">
+<a href="https://github.com/kyoubitt/eon/actions/workflows/ci.yml"><img src="https://github.com/kyoubitt/eon/actions/workflows/ci.yml/badge.svg" alt="tests"></a>
+<a href="https://github.com/kyoubitt/eon/releases"><img src="https://img.shields.io/github/v/release/kyoubitt/eon" alt="release"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="license"></a>
+</p>
 
 ![Eon fixing a typo: plan, approval, edit, check, done](examples/demo.gif)
 
-![How one request flows](examples/architecture.png)
+## Why Eon
+
+- **Free.** It drives the chat sites you already use (DeepSeek, Gemini, ChatGPT, Claude, Qwen, Mistral, Grok, Kimi, any site you add) or a local model. No API key.
+- **Safe by construction.** The model cannot edit until you approve a plan. That rule, the permission prompts and the secret redaction are code, not instructions to the model.
+- **Reversible.** Every change is on its own git branch (or backed up if there is no git): `/diff`, `/undo`, `/discard`.
+- **Honest.** Claims are tagged fact, inference or assumption with a pointer to evidence; confidence is computed, and only a check or a person can mark something verified.
 
 ## Install
 
-**Windows:** download the repo as a zip, unzip it, and double-click **`install.bat`**.
+**Windows:** unzip the download and double-click **`install.bat`**.
 
 **Mac / Linux:**
 
@@ -20,7 +29,7 @@ A coding agent for your terminal that runs on **free web chats** (DeepSeek, Gemi
 curl -fsSL https://raw.githubusercontent.com/kyoubitt/eon/main/install.sh | sh
 ```
 
-Both install Node.js and Git if missing, set Eon up, and add the `eon` command. By hand: Node 18+, Git, then `npm run setup`.
+Both install Node.js and Git if missing, set Eon up and add the `eon` command. By hand: Node 18+, Git, then `npm run setup`.
 
 ## Use
 
@@ -28,51 +37,61 @@ Both install Node.js and Git if missing, set Eon up, and add the `eon` command. 
 eon login      # once: log in to DeepSeek in the window that opens
 eon check      # confirm it works end to end
 cd my-project
-eon            # start
+eon            # start, then type a task
 ```
 
-Type a task. Eon reads your code, shows a plan with the evidence behind each claim, and edits only after you approve. Every change lands on its own git branch (or is backed up if there is no git), so `/undo` and `/discard` always work.
+Eon reads your code, shows a plan with the evidence behind each claim, and edits only after you approve.
 
-## What it does
+| | |
+|---|---|
+| **Modes** | `guided` approve each step · `accept` approve the plan once · `research` read-only · `autonomous` works alone in a worktree |
+| **Models** | `--model deepseek,qwen,chatgpt` falls back to the next at a usage limit; `eon setup-local` for a local model |
+| **Skills** | 17 recipes (`/fix-bug`, `/tdd`, `/security-review`, `/ui-work` …); write your own with `/skills new` |
+| **Brief** | a short request gets the fitting skill, likely files and your test command added, locally; `--rewrite` lets the model restate it first |
+| **Extensions** | read-only sub-agents, MCP servers (`eon mcp add`), hooks, pictures (`@shot.png`) |
+| **Memory** | `EON.md` files and lessons learned from earlier mistakes |
+| **Resilience** | Esc and Ctrl+C always work; checks and logouts are noticed; a cut-off session offers to resume |
+| **Fast mode** | `eon --fast`: quick level plus accept mode, fewer round trips for small jobs |
 
-- **Plan gate.** No edit without an approved plan. Claims are tagged fact, inference or assumption, and confidence is computed, not claimed.
-- **Many models, one chain.** `--model deepseek,gemini,qwen` falls back when one hits its limit. Local models work too (`eon setup-local`).
-- **Modes.** `guided` (approve each step), `accept` (approve the plan only), `research` (read-only), `autonomous` (works alone in a worktree).
-- **Sub-agents, MCP servers, hooks.** Read-only helpers in their own chat tab, any MCP tool server (`eon mcp add`), and your own commands around edits.
-- **Pictures.** `@screenshot.png`; models that cannot see get a description from one that can.
-- **Skills.** Short recipes the model loads when a task matches (17 come built in: `fix-bug`, `tdd`, `add-tests`, `review-changes`, `security-review`, `simplify`, `refactor-safely`, `debug-ci`, `find-regression`, `performance`, `upgrade-deps`, `write-docs`, `commit-message`, `plan-feature`, `explain-code`, `ui-work`, `accessibility-audit`). Run one with `/fix-bug the login test fails`, or write your own with `/skills new <name>`. A recipe up front means fewer wasted round trips.
-- **Short requests become full briefs.** Type "fix the login bug" and Eon, locally and with no extra model call, adds the skill that fits, the files a search says are most likely involved, and the command that proves the fix (your test command). You see one line saying what was added (`brief added: skill fix-bug · 2 likely files · check: npm test`). Turn it off with `/config brief off` or `--no-brief`. For vaguer requests, `--rewrite` goes further: the model first restates your request as a goal, scope and "done when" checks, you approve or edit it, and then the work starts (one extra message; `/config rewrite on` to keep it on).
-- **Fast mode.** `eon --fast` uses quick level and accept mode: small edits skip the plan, so a small job takes a few messages instead of many.
-- **Memory and lessons.** `EON.md` and memory files, plus rules it learns from its own mistakes.
-- **Safe by default.** Refuses your home folder, asks before commands, redacts secrets, never logs in to GitHub and never pushes.
-- **Never stuck.** Esc and Ctrl+C always work; human checks and logouts are noticed and continued; crashed sessions offer to resume.
+`/help` lists the everyday commands, `/help all` the rest. Maintenance: `eon update`, `eon doctor --fix`, `eon export`.
 
-Useful commands: `/plan` `/diff` `/undo` `/usage` `/raw` `/export` `/model` `/compact` `/resume` `/check` `/help`.
+## How it works
 
-Maintenance: `eon update` (newest version; Eon also mentions a new one at most once a day, turn off with `/config update-check off`), `eon doctor --fix` (repairs stale locks, damaged settings, a missing browser), `eon export` (a session as a markdown report).
+![How one request flows](examples/architecture.png)
+
+The plan gate, where Eon keeps its files, and how it handles limits and checks are explained with pictures in **[docs/architecture.md](docs/architecture.md)**. In short: every request is a folder of plain files in `.eon/tasks/` (messages, actions, plan, progress), memory is plain markdown you can edit, and nothing depends on the chat site remembering anything.
+
+## Numbers
+
+<p><img src="docs/img/bench-driver.png" width="49%"> <img src="docs/img/bench-messages.png" width="49%"></p>
+
+Eon's own overhead on built-in fake pages: about 1.5 s per message, 72 ms start-up, 3 model messages for a one-line fix at focused level and 1 at quick level. These measure Eon, not any model; method, caveats and what is *not* measured are in **[docs/benchmarks.md](docs/benchmarks.md)**.
+
+## Questions
+
+**Will this get my account banned?** Eon automates a website with your own login, and many sites' terms forbid automated use, so there is a real risk that a site rate-limits or closes an account. Eon keeps it low and honest: one message at a time, short random pauses, no parallel tabs, a human check is never solved or hidden but handed to you, and it does not rotate accounts or bypass limits. It cannot promise a site will not object. Use an account you can afford to lose, keep sub-agents and `--rewrite` for when you need them (they send extra messages), or use a local model (`eon setup-local`), which has no account at risk.
+
+**Do MCP servers, skills and hooks change that?** No. They run on your computer and never touch the chat site. Only extra *messages* (sub-agents, the picture helper, `--rewrite`) add to what a site sees.
+
+**Does Eon log in to GitHub or push anything?** Never. Everything is local; git is optional.
+
+**What does it send, and where?** Your messages and the files you let the model read go to the chat site you chose. It also fetches pages you approve and, once a day, asks GitHub for a newer version (`/config update-check off`).
+
+**What if a site changes its page?** `eon harness <site>` shows which of five checks fails, with a fix hint, and `eon inspect <site>` writes the page's structure (no text) to paste into an issue.
 
 ## Testing a site
 
 ```bash
-eon harness deepseek     # five short test messages on the real site; pass/fail for each, a report to paste
-eon harness --stand-in   # the same five scenarios against built-in fake pages for all 8 sites (no login)
+eon harness deepseek     # five short messages on the real site: pass/fail each, a report to paste
+eon harness --stand-in   # the same scenarios on built-in fake pages for all 8 sites (no login)
 ```
 
-The five scenarios are: send and read a reply, a long reply (400 lines), a code block read as an action, an edit block with tabs and quotes, and a follow-up in the same chat. Each line says what is wrong and how to fix it. The report (`~/.eon/harness-<site>.txt`) holds timings and counts only, never the page's text.
+## Status
 
-## Honest notes
-
-- It drives real chat pages in a browser, so it can break when a site changes. `eon teach <site>`, `eon inspect <site>` and `eon doctor --report` help fix that.
-- Free chats throttle heavy use, and automating them may be against a site's terms.
-- Tested against stand-in pages and scripted models on Linux. A real DeepSeek run on Windows passed its end-to-end check; the other sites are untested live.
-- Token counts are estimates (characters ÷ 4).
+Tested against fake pages for all 8 sites, scripted models, a real terminal and a real browser (127 tests). A real DeepSeek run on Windows passed its end-to-end check; the other sites are untested live. See [CHANGELOG.md](CHANGELOG.md).
 
 ## More
 
-Full guide: [docs/guide.md](docs/guide.md) (every command, mode, setting and limit).
+[Full guide](docs/guide.md) · [Architecture](docs/architecture.md) · [Benchmarks](docs/benchmarks.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-```bash
-npm test      # unit tests; browser tests run when Playwright is installed
-```
-
-Licensed under the [GNU AGPL v3](LICENSE) (or later): you can use, change and share Eon freely, but if you distribute it or run a modified version as a network service, you must share your source under the same license.
+Licensed under the [GNU AGPL v3](LICENSE) or later: use, change and share Eon freely; if you distribute it or run a modified version as a network service, share your source under the same license.

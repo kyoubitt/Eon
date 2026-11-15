@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Draws docs/img/*.png: the plan gate, where things are stored, and what happens at a limit or a check.
+Run from the repo root: python3 tools/diagrams.py   (needs Playwright for Node; see tools/sketch.py)"""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sketch import *
+
+# ---- 1. the plan gate ----
+s = Sketch(1200, 760, seed=5)
+s.title('the plan gate: nothing is edited until you approve a plan')
+s.node(60, 120, 250, 100, '1 investigate', ['read files, search,', 'run read-only commands'])
+s.node(380, 120, 250, 100, '2 plan', ['claims + evidence,', 'steps, validation'], BLUE, fill='#eef1ff')
+s.node(700, 120, 250, 100, '3 you approve', ['or type what to', 'change; it re-plans'], AMBER, fill='#fff6e0')
+s.arrow([(310, 170), (380, 170)]); s.arrow([(630, 170), (700, 170)])
+s.node(700, 300, 250, 100, '4 one step', ['you say yes to', 'start it (guided)'])
+s.arrow([(825, 220), (825, 300)])
+s.node(380, 300, 250, 100, '5 edit + run', ['numbered diff shown,', 'commands ask first'])
+s.arrow([(700, 350), (630, 350)])
+s.node(60, 300, 250, 100, '6 verify', ['a claim becomes', 'verified or disproved'], GREEN, fill='#e9f3e6')
+s.arrow([(380, 350), (310, 350)])
+s.node(60, 480, 250, 110, '7 step done', ['committed on its own', 'branch (or backed up)'])
+s.arrow([(185, 400), (185, 480)])
+s.node(380, 480, 250, 110, '8 done', ['evidence, steps,', 'confidence, /diff'], GREEN, fill='#e9f3e6')
+s.arrow([(310, 535), (380, 535)])
+s.node(700, 480, 400, 110, 'disproved? the plan is revoked', ['edits lock again, the mistake is', 'recorded and becomes a lesson'], RED, dash=True)
+s.arrow([(185, 300), (185, 262), (505, 262), (505, 220)], RED, dash=True)
+s.text(260, 250, 'a disproved claim sends it back to plan', 14, RED)
+s.text(60, 660, 'Enforced by the program, not by asking the model nicely: an edit action without an approved plan is refused.', 15, BLUE)
+s.text(60, 686, 'Quick level lets edits under 20 lines in one file skip steps 2-3.', 15, GREY)
+s.save('plan-gate')
+
+# ---- 2. where things are stored ----
+s = Sketch(1200, 1020, seed=8)
+s.title('where Eon keeps things, and how it tracks a conversation')
+s.node(40, 110, 540, 300, 'your project folder', ['EON.md             project memory (shared)', 'EON.local.md       memory only you see', '.eon/tasks/<id>/    one folder per session:', '    session.json  status, mode, step progress', '    plan.json     claims, tags, evidence', '    chat.jsonl    every message sent and reply', '    events.jsonl  what you saw (for /resume)', '    audit.jsonl   every action and its result'], BLUE, fill='#eef1ff', tcol=BLUE)
+s.node(40, 440, 540, 250, '.eon/ (more, same folder)', ['backups/<id>/   copies before edits (no git)', 'worktrees/<id>/ the session branch checkout', 'memory.json     notes; mistakes.jsonl lessons', 'research.jsonl  fetched docs; skills/ agents/', 'exports/ shots/ vision/   reports, pictures', 'mcp.json  settings.json   servers, rules, hooks'])
+s.node(620, 110, 540, 250, '~/.eon (your home, all projects)', ['config.json     your defaults', 'selectors.json  what Eon learned per site', 'sites.json      sites you added', 'EON.md          memory for every project', 'chrome/         the logged-in browser profile', 'harness-*.txt   reports you can paste'], GREEN, fill='#e9f3e6', tcol=GREEN)
+s.node(620, 390, 540, 300, 'on the chat site (DeepSeek etc.)', ['The site keeps its own copy of each chat in', 'your account. Eon opens a fresh chat per session.', '', 'Continuity is Eon\'s job, not the site\'s:', 'the local files above are the record. A long', 'chat is summarised into a new one; a new model', 'gets the same summary. Nothing here is needed', 'for Eon to resume after a crash.'], AMBER, fill='#fff6e0', tcol=AMBER)
+s.arrow([(580, 260), (620, 260)], both=True)
+s.text(40, 730, 'Besides your messages to the chat site, Eon only fetches pages you approve (docs, screenshots) and, once a day,', 15, BLUE)
+s.text(40, 752, 'asks GitHub for a newer version (a plain request; /config update-check off).', 15, BLUE)
+s.node(40, 790, 1120, 190, 'how it keeps track', ["1  Each request gets an id. Every message, action and result is appended to that session's files as it happens.", '2  session.json is rewritten atomically after each step; a lock file is touched every 5 s while Eon is busy.', '3  /resume replays events.jsonl and restores plan, steps and usage; the model gets a fresh chat plus a digest.', '4  A session whose lock went stale was cut off: Eon offers to resume it and warns the model to re-check files.'])
+s.save('storage')
+
+# ---- 3. limits and checks ----
+s = Sketch(1200, 800, seed=11)
+s.title('when a site pushes back: limits, checks and logins')
+s.node(60, 120, 300, 110, 'a reply arrives', ['Eon reads it as text and', 'looks at what it says'])
+s.node(460, 120, 300, 110, 'usage limit notice?', ['"limit reached", "try again', 'later" and the like'], AMBER, fill='#fff6e0')
+s.arrow([(360, 175), (460, 175)])
+s.node(860, 120, 300, 110, 'next model takes over', ['same task, a short summary,', 'a fresh chat (--model a,b,c)'], GREEN, fill='#e9f3e6')
+s.arrow([(760, 175), (860, 175)])
+s.text(780, 160, 'yes', 14, GREEN)
+s.node(460, 300, 300, 110, 'none left?', ['ask: wait 10 min,', 'retry now, or stop'], AMBER, fill='#fff6e0')
+s.arrow([(610, 230), (610, 300)])
+s.node(60, 480, 340, 130, 'human check or login page', ['Eon never solves it. It brings', 'the window forward and tells you,', 'then carries on once it is gone'], RED, fill='#fff1ee', tcol=RED)
+s.node(460, 480, 300, 130, 'you skip it', ['with one model Eon stops', 'right away. It is not a', 'limit, so no 10 minute wait'])
+s.arrow([(400, 545), (460, 545)])
+s.node(860, 480, 300, 130, 'message not taken', ['tries Enter, the Send button,', 'Ctrl+Enter, then asks you:', 'wait, try again, or skip'])
+s.text(60, 700, 'Everything here is paced like a person: short random pauses, one message at a time, no parallel tabs on one account.', 15, BLUE)
+s.text(60, 726, 'Eon does not try to hide that it is automated or get around a limit; it hands the decision back to you.', 15, GREY)
+s.save('fallback')
