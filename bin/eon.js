@@ -170,6 +170,7 @@ function parse(argv) {
     else if (a === '--continue' || a === '-c') opts.cont = true;
     else if (a === '--resume' || a === '-r') opts.resume = /^(\d{1,3}|\d{14}-\S*)$/.test(argv[i + 1] ?? '') ? argv[++i] : '';
     else if (a === '--help' || a === '-h') opts.help = true;
+    else if (a === '--version' || a === '-v') opts.version = true;
     else if (a === '--all') opts.all = true;
     else if (valued.includes(a)) {
       if (argv[i + 1] === undefined) throw new Error(`${a} needs a value`);
@@ -338,6 +339,7 @@ async function siteCommands(first, rest, opts) {
 async function main() {
   const opts = parse(process.argv.slice(2));
   const [first, ...rest] = opts.words;
+  if (opts.version) { console.log(currentVersion(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'))); return; }
   if (opts.help || first === 'help') { console.log(process.argv.includes('--all') ? HELP : SHORT_HELP); return; }
   if (first === 'mcp') {
     const [sub, name, ...cmd] = rest;

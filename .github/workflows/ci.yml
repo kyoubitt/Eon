@@ -12,4 +12,5 @@ jobs:
         with:
           node-version: 20
       - run: npm install --ignore-scripts
-      - run: node --test test/eon.test.js
+      - run: npx playwright install --with-deps chromium
+      - run: node --test --test-timeout=300000 test/eon.test.js

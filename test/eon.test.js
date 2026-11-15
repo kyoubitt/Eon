@@ -2147,6 +2147,7 @@ test('rewrite: the model restates the request first; you can accept it, keep you
 test('help is short by default, full with --all, and a mistyped command is caught', async () => {
   const { spawnSync } = await import('node:child_process');
   const eon = (...args) => spawnSync(process.execPath, [path.resolve('bin/eon.js'), ...args], { encoding: 'utf8', env: { ...process.env, EON_NO_UPDATE_CHECK: '1' } });
+  assert.match(eon('--version').stdout, /^\d+\.\d+\.\d+\s*$/, '--version prints the version');
   const short = eon('--help').stdout;
   assert.ok(short.split('\n').length <= 20, `short help is ${short.split('\n').length} lines`);
   assert.match(short, /eon login[\s\S]*eon check[\s\S]*eon --fast[\s\S]*eon doctor --fix/);
