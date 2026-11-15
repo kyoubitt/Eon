@@ -115,7 +115,7 @@ Options
   --fast                quick level + accept mode: fewer round trips for small jobs
   --stdin               add text piped into eon to the task, e.g. git diff | eon -p "review this" --stdin
   --no-splash           skip the intro screen (or: /config splash off)
-  --pace slow|normal    how human-paced the browser is (default normal)
+  --pace slow           add human-like pauses between steps (default: none; messages are pasted at once)
   --output-format json  with -p: print one JSON result (needs --mode autonomous or research)
   --script, --review-script, --research-script <file.json>   scripted replies for the "mock" model (demos)
 `;

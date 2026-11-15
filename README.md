@@ -65,11 +65,11 @@ The plan gate, where Eon keeps its files, and how it handles limits and checks a
 
 <p><img src="docs/img/bench-driver.png" width="49%"> <img src="docs/img/bench-messages.png" width="49%"></p>
 
-Eon's own overhead on built-in fake pages: about 1.5 s per message, 72 ms start-up, 3 model messages for a one-line fix at focused level and 1 at quick level. These measure Eon, not any model; method, caveats and what is *not* measured are in **[docs/benchmarks.md](docs/benchmarks.md)**.
+Eon's own overhead on built-in stand-in pages (no model time): about 1.2 s per message, 70 ms start-up, 3 model messages for a one-line fix at focused level and 1 at quick level. These measure Eon, not any model; method, caveats and what is *not* measured are in **[docs/benchmarks.md](docs/benchmarks.md)**.
 
 ## Questions
 
-**Will this get my account banned?** Eon automates a website with your own login, and many sites' terms forbid automated use, so there is a real risk that a site rate-limits or closes an account. Eon keeps it low and honest: one message at a time, short random pauses, no parallel tabs, a human check is never solved or hidden but handed to you, and it does not rotate accounts or bypass limits. It cannot promise a site will not object. Use an account you can afford to lose, keep sub-agents and `--rewrite` for when you need them (they send extra messages), or use a local model (`eon setup-local`), which has no account at risk.
+**Will this get my account banned?** Eon automates a website with your own login, and many sites' terms forbid automated use, so there is a real risk that a site rate-limits or closes an account. Eon keeps it low and honest: one message at a time, no parallel tabs, a human check is never solved or hidden but handed to you, and it does not rotate accounts or bypass limits. It pastes messages whole, like anyone with a ready-made message, and adds no theatrical pauses; that makes automation slightly easier to notice, so `--pace slow` restores human-like pauses if you want them. It cannot promise a site will not object. Use an account you can afford to lose, keep sub-agents and `--rewrite` for when you need them (they send extra messages), or use a local model (`eon setup-local`), which has no account at risk.
 
 **Do MCP servers, skills and hooks change that?** No. They run on your computer and never touch the chat site. Only extra *messages* (sub-agents, the picture helper, `--rewrite`) add to what a site sees.
 

@@ -4,48 +4,48 @@
   "platform": "linux x64",
   "cpus": 4,
   "startupMs": {
-    "median": 72,
-    "best": 62
+    "median": 70,
+    "best": 55
   },
   "perSite": {
     "deepseek": {
-      "median": 3.32,
-      "worst": 3.61,
+      "median": 0.97,
+      "worst": 1.64,
       "n": 12
     },
     "gemini": {
-      "median": 1.61,
-      "worst": 2.22,
+      "median": 1.18,
+      "worst": 1.49,
       "n": 12
     },
     "chatgpt": {
-      "median": 1.56,
-      "worst": 1.88,
+      "median": 1.21,
+      "worst": 1.52,
       "n": 12
     },
     "claude": {
-      "median": 1.55,
-      "worst": 1.83,
+      "median": 1.16,
+      "worst": 1.4,
       "n": 12
     },
     "qwen": {
-      "median": 1.57,
-      "worst": 1.82,
+      "median": 1.18,
+      "worst": 1.41,
       "n": 12
     },
     "mistral": {
-      "median": 1.6,
-      "worst": 1.92,
+      "median": 1.21,
+      "worst": 1.88,
       "n": 12
     },
     "grok": {
-      "median": 1.57,
-      "worst": 1.67,
+      "median": 1.2,
+      "worst": 1.43,
       "n": 12
     },
     "kimi": {
-      "median": 1.54,
-      "worst": 1.93,
+      "median": 1.2,
+      "worst": 1.83,
       "n": 12
     }
   },

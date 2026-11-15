@@ -90,7 +90,9 @@ const SEND_GUESSES = [
 ];
 
 // "normal" pace is for a person; "slow" is gentler still; "fast" is for tests.
-const pace = () => ({ slow: 2, normal: 1, fast: 0.02 }[process.env.EON_PACE] ?? 1);
+// Messages are pasted in one go, like anyone with a ready-made message. "slow" adds human-like pauses (a mouse glide,
+// short random waits, a gap of a few seconds between messages) for people who want them; the default adds none.
+const pace = () => ({ slow: 1, normal: 0, fast: 0 }[process.env.EON_PACE] ?? 0);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pause = (min, max) => sleep((min + Math.random() * (max - min)) * pace());
 
@@ -432,7 +434,7 @@ export class WebChat {
   /** Click the box like a person, put the message in as one paste, and check it all arrived. */
   async #type(loc, text) {
     const box = await loc.boundingBox().catch(() => null);
-    if (box) await this.page.mouse.move(box.x + box.width * (0.3 + Math.random() * 0.4), box.y + box.height / 2, { steps: 3 + Math.floor(Math.random() * 4) });
+    if (box && pace() > 0) await this.page.mouse.move(box.x + box.width * (0.3 + Math.random() * 0.4), box.y + box.height / 2, { steps: 3 + Math.floor(Math.random() * 4) });
     await this.#pause(80, 250);
     await loc.click({ delay: 20 + Math.random() * 60 });
     const clear = async () => { await this.page.keyboard.press('Control+A'); await this.page.keyboard.press('Delete'); };

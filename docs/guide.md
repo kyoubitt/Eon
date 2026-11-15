@@ -179,7 +179,7 @@ After a task finishes, your next message continues in the same session: same cha
 | `--allow "<cmd>"` | A command that may run without asking. Repeatable. |
 | `--allow-host <host>` | A documentation site that may be fetched without asking. Repeatable. |
 | `--in-place` | Use a new branch in your checkout instead of a separate worktree. |
-| `--pace slow\|normal` | How human-paced the browser is. |
+| `--pace slow` | Add human-like pauses (a mouse glide, short random waits, a few seconds between messages). Off by default: messages are pasted at once. |
 
 When a session ends, its branch is on the side. `/diff` shows it, `/merge` keeps it, `/discard` drops it. Nothing touches your files until you merge.
 
@@ -249,7 +249,7 @@ There is no API key. Eon drives a real browser window that you log in to once. A
 Eon tries to behave like a person using their own account:
 
 - **Your own browser.** If Chrome or Edge is installed, Eon starts it as a normal window with its own profile (`~/.eon/chrome`) and connects to it over a local debugging port. It is not started by an automation library, so the page is not told it is automated. Without Chrome or Edge, Eon falls back to Playwright's browser with the usual automation switches turned off. Set `EON_BROWSER=playwright` to force the fallback.
-- **Human pace.** Messages are pasted in one go, not typed key by key, with short random pauses and a random gap of a second or two between messages. `--pace slow` makes it gentler.
+- **Pasted, not performed.** Messages are pasted whole, like any ready-made message, one at a time and never in parallel tabs. Pauses meant to look human are off by default; `--pace slow` adds them.
 - **Hand-off, not workarounds.** If a site asks you to verify you are human, Eon stops, brings the window to the front, and asks you to solve it, or to use the next model. It does not solve checks, spoof a browser fingerprint or rotate identities.
 
 This cannot guarantee a site will not flag automation, and automating these chats may be against their terms. If a site blocks it, use another model in the list or a local model.
@@ -367,7 +367,7 @@ The model has three actions for this: `look` (ask the helper one precise questio
 
 A skill is a folder with a `SKILL.md`: a `name`, a one-line `description` saying when to use it, then the steps. Eon looks in `.eon/skills/` (this project), `~/.eon/skills/` (you) and its own `skills/` (built in); a project skill beats yours, which beats a built-in one. The model is shown only the names and one-liners; when a task matches it sends a `skill` action and receives the steps. You can also run one yourself with `/<name> <what to do>`. `/skills` lists them, `/skills new <name>` makes a starter file. A skill is guidance only: the plan gate and permissions still apply.
 
-`eon --fast` is `--level quick --mode accept`: edits under 20 lines in one file need no plan, and when a plan is needed you approve it once. It does not shorten the pauses between messages; that is `--pace`, and a human-like pace is part of not tripping a site's checks.
+`eon --fast` is `--level quick --mode accept`: edits under 20 lines in one file need no plan, and when a plan is needed you approve it once. It is about how many messages a job needs, not about waiting less.
 
 ## Task briefs
 

@@ -32,7 +32,7 @@ The gate is code, not a request to the model: an edit action without an approved
 
 ![Limits, checks and logins](img/fallback.png)
 
-Eon paces itself like a person and hands every decision about checks and limits back to you. It does not solve checks, rotate accounts or hide that it is automated beyond what a normal browser does.
+Eon sends one message at a time and hands every decision about checks and limits back to you. It does not solve checks, rotate accounts or hide that it is automated beyond what a normal browser does.
 
 ## Extensions
 

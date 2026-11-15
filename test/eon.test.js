@@ -2161,3 +2161,20 @@ test('help is short by default, full with --all, and a mistyped command is caugh
   // a real task is never mistaken for a typo
   assert.doesNotMatch(eon('-p', 'fix the update button', '--mode', 'research', '--model', 'mock').stdout + eon('-p', 'fix the update button', '--mode', 'research', '--model', 'mock').stderr, /Did you mean/);
 });
+
+test('pace: no human-like pauses by default; --pace slow brings them back', async () => {
+  const { WebChat } = await import('../src/providers/web-chat.js');
+  const saved = process.env.EON_PACE;
+  try {
+    delete process.env.EON_PACE;
+    const lean = new WebChat('deepseek', { ui: new ScriptedUI() });
+    assert.equal(lean.minGapMs, 0, 'no minimum gap between messages');
+    assert.equal(lean.jitterMs, 0);
+    process.env.EON_PACE = 'normal';
+    assert.equal(new WebChat('deepseek', { ui: new ScriptedUI() }).minGapMs, 0);
+    process.env.EON_PACE = 'slow';
+    const slow = new WebChat('deepseek', { ui: new ScriptedUI() });
+    assert.equal(slow.minGapMs, 1500);
+    assert.equal(slow.jitterMs, 2500);
+  } finally { if (saved === undefined) delete process.env.EON_PACE; else process.env.EON_PACE = saved; }
+});

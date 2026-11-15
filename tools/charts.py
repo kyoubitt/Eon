@@ -18,12 +18,12 @@ def bars(s, x0, y0, w, h, items, unit, vmax, colors):
 
 # 1. per message, per site
 s = Sketch(1200, 700, seed=21)
-s.title('Eon\'s own time per message (fake pages answer instantly)')
+s.title('Eon\'s own time per message (stand-in pages, no model time)')
 sites = d['perSite']
 items = [(k, v['median']) for k, v in sites.items()]
-bars(s, 60, 120, 1080, 440, items, 's', 4.0, [BLUE, TEAL, GREEN, AMBER])
-s.text(60, 600, 'The ~1.5 s is Eon\'s fixed cost: a human-like pause, the click, a short quiet window to be sure the reply is finished.', 15, GREY)
-s.text(60, 624, 'deepseek is 3.3 s because its stand-in page also simulates 1.8 s of "thinking". A real model adds its own time on top.', 15, GREY)
+bars(s, 60, 120, 1080, 440, items, 's', 2.0, [BLUE, TEAL, GREEN, AMBER])
+s.text(60, 600, 'About 1.2 s is Eon\'s own cost per message: paste it, send it, and a short quiet window to be sure the reply is finished.', 15, GREY)
+s.text(60, 624, 'A real model adds its own time on top. Pauses meant to look human are off by default (--pace slow adds them).', 15, GREY)
 s.text(60, 660, f'median of {list(sites.values())[0]["n"]} messages per site · node {d["node"]} · {d["platform"]} · {d["cpus"]} cores', 14, BLUE)
 s.save('bench-driver')
 

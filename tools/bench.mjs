@@ -29,7 +29,7 @@ const perSite = {};
 for (const name of (process.env.BENCH_SITES ? process.env.BENCH_SITES.split(',') : Object.keys(PROFILES))) {
   const secs = [];
   for (let round = 0; round < Number(process.env.BENCH_ROUNDS ?? 3); round++) {
-    const fake = await startFakeChat({ stream: true, ...PROFILES[name] }, (t) => standInReply(t));
+    const fake = await startFakeChat({ stream: true, ...PROFILES[name], thinking: false }, (t) => standInReply(t));
     const ui = { print() {}, ask: async (q) => (/skip/i.test(q) ? 's' : ''), close() {} };
     const chat = new WebChat(name, { ui, minGapMs: 0, jitterMs: 0, stableMs: 400, firstLookMs: 4000, selectors: { url: fake.url } });
     try {

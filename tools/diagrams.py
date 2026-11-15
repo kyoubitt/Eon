@@ -57,6 +57,6 @@ s.node(60, 480, 340, 130, 'human check or login page', ['Eon never solves it. It
 s.node(460, 480, 300, 130, 'you skip it', ['with one model Eon stops', 'right away. It is not a', 'limit, so no 10 minute wait'])
 s.arrow([(400, 545), (460, 545)])
 s.node(860, 480, 300, 130, 'message not taken', ['tries Enter, the Send button,', 'Ctrl+Enter, then asks you:', 'wait, try again, or skip'])
-s.text(60, 700, 'Everything here is paced like a person: short random pauses, one message at a time, no parallel tabs on one account.', 15, BLUE)
+s.text(60, 700, 'Eon sends one message at a time and never opens parallel tabs on one account.', 15, BLUE)
 s.text(60, 726, 'Eon does not try to hide that it is automated or get around a limit; it hands the decision back to you.', 15, GREY)
 s.save('fallback')
