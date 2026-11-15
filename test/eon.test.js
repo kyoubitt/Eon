@@ -2178,3 +2178,61 @@ test('pace: no human-like pauses by default; --pace slow brings them back', asyn
     assert.equal(slow.jitterMs, 2500);
   } finally { if (saved === undefined) delete process.env.EON_PACE; else process.env.EON_PACE = saved; }
 });
+
+// ---- the "/" menu ----
+
+test('"/" menu: every command and skill can be reached, matches are ranked, skills are labelled, Enter and Tab pick', async () => {
+  const { rankCommands } = await import('../src/cli.js');
+  const commands = [
+    ['/plan', 'show the current plan'], ['/diff', 'what changed'], ['/undo', 'take back the last step'], ['/mode ', 'guided | accept'],
+    ['/model ', 'change models'], ['/resume', 'go back to a past session'], ['/new', 'fresh session'], ['/help', 'list the commands'],
+    ['/usage', 'estimated tokens'], ['/export', 'save a report'], ['/check', 'check this computer'],
+    ['/fix-bug ', 'Find the cause of a bug first (skill)'], ['/security-review ', 'Look for security problems (skill)'], ['/add-tests ', 'Add tests in the project style (skill)'], ['/tdd ', 'Build a feature test-first (skill)'],
+  ];
+  // ranking
+  assert.equal(rankCommands('/', commands).length, commands.length, 'only "/" lists everything');
+  assert.equal(rankCommands('/sec', commands)[0][0], '/security-review ', 'a word inside the name');
+  assert.deepEqual(rankCommands('/mod', commands).map(([c]) => c.trim()), ['/mode', '/model'], 'name prefix, in list order');
+  assert.equal(rankCommands('/test', commands)[0][0], '/add-tests ', 'a word inside a skill name');
+  assert.equal(rankCommands('/tokens', commands)[0][0], '/usage', 'the description matches');
+  assert.equal(rankCommands('/plan', commands).length, 0, 'an exact, already typed command no longer lists itself');
+  assert.deepEqual(rankCommands('/zzz', commands), []);
+  assert.equal(rankCommands('/he', commands)[0][0], '/help');
+
+  // in the terminal
+  const { cli, text } = fakeCli({ rows: 30 });
+  cli.commands = commands;
+  const p = cli.ask('', { kind: 'task', placeholder: 'go' });
+  cli.feed('/');
+  let shown = strip(cli.live.join('\n'));
+  assert.equal([...shown.matchAll(/^ {2,4}(❯ )?\/\S+/gm)].length, 8, 'eight rows are shown');
+  assert.match(shown, /1-8 of 15/);
+  assert.doesNotMatch(shown, /\/tdd/, 'the ninth and later are scrolled out of view');
+  for (let i = 0; i < 12; i++) cli.feed('\x1b[B'); // down 12 times
+  shown = strip(cli.live.join('\n'));
+  assert.match(shown, /❯ \/security-review/, 'the 13th entry is reachable and highlighted');
+  assert.match(shown, /\(skill\)/, 'skills say so');
+  assert.match(shown, /5-12 of 15|6-13 of 15|8-15 of 15/, 'the window follows the highlight');
+  // typing filters; Enter on a skill puts it in the box with a space, ready for the request
+  cli.feed('\x15'); // clear the box
+  cli.feed('/sec');
+  shown = strip(cli.live.join('\n'));
+  assert.match(shown, /❯ \/security-review/);
+  assert.doesNotMatch(shown, /\/diff/);
+  cli.feed('\r');
+  assert.equal(cli.input, '/security-review ');
+  cli.feed('the login code');
+  assert.equal(cli.input, '/security-review the login code');
+  assert.equal(strip(cli.live.join('\n')).includes('of 15'), false, 'no menu once there is text after the name');
+  // Tab completes a command that takes an argument
+  cli.input = ''; cli.cur = 0;
+  cli.feed('/mod'); cli.feed('\t');
+  assert.equal(cli.input, '/mode ');
+  // a slash in the middle of a sentence opens nothing
+  cli.input = ''; cli.cur = 0;
+  cli.feed('look at src/app.js');
+  assert.equal(strip(cli.live.join('\n')).includes('❯ /'), false);
+  cli.feed('\r');
+  assert.equal(await p, 'look at src/app.js');
+  cli.close();
+});

@@ -2,6 +2,9 @@
 
 Versions follow `package.json`. Each release is published automatically from `main`.
 
+## 0.8.1
+- Typing `/` opens a scrolling menu of every command and skill, ranked as you type (`/sec` finds `security-review`, `/tokens` finds `/usage`); skills are labelled and picking one inserts it ready for your request.
+
 ## 0.8.0
 - No more theatre: messages are pasted at once with no mouse glide, random pauses or minimum gap between messages (`--pace slow` brings them back). About 1.2 s of Eon time per message instead of 1.5 s.
 - Benchmarks and charts re-measured without the simulated reasoning delay.

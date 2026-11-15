@@ -10,7 +10,7 @@ import { matchFiles } from './mentions.js';
 
 const SHORTCUTS = [
   color.bold('Shortcuts'),
-  '  /            commands              Shift+Tab   change the mode',
+  '  /            commands and skills   Shift+Tab   change the mode',
   '  Enter        send                  Ctrl+J      new line (or \\ then Enter)',
   '  Esc          interrupt or clear    ↑ ↓         earlier messages',
   '  Ctrl+O       show the last output  Ctrl+C ×2   leave',
@@ -58,6 +58,28 @@ export function* keys(s) {
 }
 
 /** Only a known command is a command. "/src/app.js is broken" is a message that happens to start with a slash. */
+/**
+ * The entries a "/" menu shows for what has been typed so far, best match first: the name exactly, the name's start,
+ * a word inside the name (/sec finds security-review), anywhere in the name, then the description. With only "/" typed
+ * everything is listed in its own order.
+ */
+export function rankCommands(input, commands) {
+  const q = String(input).replace(/^\//, '').toLowerCase();
+  if (!q) return commands.filter(([c]) => c.trim() !== input);
+  const scored = [];
+  commands.forEach(([c, d], i) => {
+    const name = c.trim().replace(/^\//, '').toLowerCase();
+    let s = -1;
+    if (name === q) s = 0;
+    else if (name.startsWith(q)) s = 1;
+    else if (name.split(/[-_ ]/).some((w) => w.startsWith(q))) s = 2;
+    else if (name.includes(q)) s = 3;
+    else if (String(d).toLowerCase().includes(q)) s = 4;
+    if (s >= 0 && c.trim() !== input) scored.push([s, i, [c, d]]);
+  });
+  return scored.sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]);
+}
+
 export function isCommand(line, commands) {
   const word = String(line).trim().split(/\s+/)[0];
   return commands.some(([c]) => c.trim() === word) || ['/exit', '/clear', '/history'].includes(word) || /^\/[a-z-]+$/i.test(String(line).trim());
@@ -158,8 +180,10 @@ export class CLI {
       row = 1 + (lay.row - first); col = 4 + lay.col; showCursor = true;
       const menu = this.#menu();
       if (menu.length) {
-        const shownMenu = menu.slice(0, 6);
-        shownMenu.forEach(([c, d], i) => lines.push(clip(i === this.menuSel ? `  ${color.cyan('❯')} ${color.bold(c.padEnd(22))} ${color.dim(d)}` : `    ${c.padEnd(22)} ${color.dim(d)}`, w)));
+        // A window of 8 rows that follows the highlighted entry, so every entry can be reached with the arrow keys.
+        const size = 8, start = Math.max(0, Math.min(this.menuSel - 4, menu.length - size));
+        menu.slice(start, start + size).forEach(([c, d], k) => lines.push(clip(start + k === this.menuSel ? `  ${color.cyan('❯')} ${color.bold(c.trim().padEnd(20))} ${color.dim(d)}` : `    ${c.trim().padEnd(20)} ${color.dim(d)}`, w)));
+        if (menu.length > size && !this.#mention()) lines.push(color.dim(`    ${start + 1}-${Math.min(menu.length, start + size)} of ${menu.length}  ·  ↑ ↓ to scroll, Tab or Enter to pick`));
       } else lines.push(clip(this.#statusLine(), w));
     } else if (p) {
       const n = p.options.length;
@@ -226,7 +250,7 @@ export class CLI {
     const at = this.#mention();
     if (at && this.files.length) return matchFiles(at.query, this.files).map((f) => [f, '']);
     if (!this.input.startsWith('/') || this.input.includes(' ')) return [];
-    return this.commands.filter(([c]) => c.startsWith(this.input) && c !== this.input);
+    return rankCommands(this.input, this.commands);
   }
 
   // ---- output ----------------------------------------------------------------------------
@@ -492,12 +516,12 @@ export class CLI {
     switch (k.name) {
       case 'up':
         if (choice) p.sel = (p.sel + p.options.length - 1) % p.options.length;
-        else if (menu.length) this.menuSel = (this.menuSel + Math.min(menu.length, 6) - 1) % Math.min(menu.length, 6);
+        else if (menu.length) this.menuSel = (this.menuSel + menu.length - 1) % menu.length;
         else if (!this.#moveRow(-1)) this.#history(-1);
         break;
       case 'down':
         if (choice) p.sel = (p.sel + 1) % p.options.length;
-        else if (menu.length) this.menuSel = (this.menuSel + 1) % Math.min(menu.length, 6);
+        else if (menu.length) this.menuSel = (this.menuSel + 1) % menu.length;
         else if (!this.#moveRow(1)) this.#history(1);
         break;
       case 'newline': if (p.kind === 'task') this.#insert('\n'); break;

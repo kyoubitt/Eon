@@ -53,7 +53,7 @@ Eon reads your code, shows a plan with the evidence behind each claim, and edits
 | **Resilience** | Esc and Ctrl+C always work; checks and logouts are noticed; a cut-off session offers to resume |
 | **Fast mode** | `eon --fast`: quick level plus accept mode, fewer round trips for small jobs |
 
-`/help` lists the everyday commands, `/help all` the rest. Maintenance: `eon update`, `eon doctor --fix`, `eon export`.
+**Type `/`** to see every command and skill; keep typing to filter (`/sec` finds `security-review`), ↑ ↓ to scroll, Tab or Enter to pick. `/help` lists the everyday commands, `/help all` the rest. Maintenance: `eon update`, `eon doctor --fix`, `eon export`.
 
 ## How it works
 

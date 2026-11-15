@@ -428,6 +428,8 @@ async function main() {
   });
   const idle = (extra = {}) => ui.update?.({ mode: opts.mode, level: opts.level, models: modelsInfo(), dir: path.basename(root), phase: 'idle', busy: false, session: false, ...extra });
 
+  // The "/" menu lists the commands and then the skills (built in, yours and the project's).
+  const refreshCommands = () => { ui.commands = [...COMMANDS, ...[...(runtime?.skills ?? loadSkills(root)).values()].filter((k) => !COMMANDS.some(([c]) => c.trim() === `/${k.name}`)).map((k) => [`/${k.name} `, `${k.description} (skill)`])]; };
   const shutdown = async (code) => {
     killRunning();
     runtime?.markInterrupted();
@@ -437,7 +439,7 @@ async function main() {
     process.exit(code);
   };
   if (interactive) {
-    ui.commands = COMMANDS;
+    refreshCommands();
     ui.cycle = LIVE_MODES;
     ui.files = listFiles(root);
     // Shift+Tab while Eon works changes the mode of the running session.
@@ -661,7 +663,7 @@ async function main() {
         return ui.print(`Picture added: ${path.basename(file)}. It goes with your next message${firstOf(planSpec()) === 'deepseek' ? ` (DeepSeek cannot see pictures, so ${visionSpec()} will describe it)` : ''}.`);
       }
       case '/skills': {
-        if (args[0] === 'new' && args[1]) { try { const f = newSkill(root, args[1]); return ui.print(`Made ${path.relative(root, f)}. Edit it, then use it with /${args[1]} <what to do>.`); } catch (e) { return ui.print(color.red(e.message)); } }
+        if (args[0] === 'new' && args[1]) { try { const f = newSkill(root, args[1]); refreshCommands(); return ui.print(`Made ${path.relative(root, f)}. Edit it, then use it with /${args[1]} <what to do>.`); } catch (e) { return ui.print(color.red(e.message)); } }
         const all = [...(runtime?.skills ?? loadSkills(root)).values()];
         return say('Skills', `${all.map((k) => `  /${k.name.padEnd(16)} ${k.description} ${color.dim(`(${k.source})`)}`).join('\n')}\n${color.dim('  Use one: /<name> <what to do>. Make your own: /skills new <name>')}`);
       }
@@ -772,6 +774,7 @@ async function main() {
         process.chdir(root);
         remember(root);
         runtime = null;
+        refreshCommands();
         idle();
         return ui.print(`Now working in ${root}. Your next message starts a new session there.`);
       }
