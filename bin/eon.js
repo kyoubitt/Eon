@@ -370,7 +370,7 @@ async function main() {
   if (opts.words.length === 1 && /^[a-z-]{3,12}$/.test(first)) {
     const known = ['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export', 'mcp', 'help', 'run'];
     const dist = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
-    const near = known.find((k) => k !== first && dist(first, k) <= 2 && dist(first, k) < first.length / 2);
+    const near = known.find((k) => k !== first && dist(first, k) <= 2 && dist(first, k) <= first.length / 2);
     if (near && !known.includes(first)) { console.log(`Did you mean: eon ${near}\n(To use "${first}" as a task, put it in quotes with more words, for example: eon "${first} the readme".)`); return; }
   }
   let task = (first === 'run' ? rest : opts.words).join(' ').trim();

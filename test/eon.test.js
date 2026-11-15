@@ -2154,7 +2154,7 @@ test('help is short by default, full with --all, and a mistyped command is caugh
   const all = eon('--help', '--all').stdout;
   assert.ok(all.split('\n').length > 40);
   assert.match(all, /--allow-host[\s\S]*--rewrite/);
-  for (const [typo, want] of [['udpate', 'update'], ['docter', 'doctor'], ['loign', 'login'], ['chekc', 'check']]) {
+  for (const [typo, want] of [['udpate', 'update'], ['docter', 'doctor'], ['loign', 'login'], ['chekc', 'check'], ['hepl', 'help']]) {
     const out = eon(typo).stdout;
     assert.match(out, new RegExp(`Did you mean: eon ${want}\\b`), typo);
   }
