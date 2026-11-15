@@ -745,7 +745,18 @@ test('terminal app: the live area never exceeds the screen width, and events ren
   cli.event({ type: 'diff', path: 'greet.js', created: false, removed: '"wrold"', added: '"world"', changed: 1 });
   cli.event({ type: 'plan', plan, confidence: 0.5, done: [], started: [1] });
   const shown = text();
-  assert.match(shown, /● Run\(node greet\.js\)\n {2}⎿ {2}exit 0\n {5}hello world\n {5}line two/);
+  assert.match(shown, /● Run node greet\.js {2}exit 0\n {4}hello world\n {4}line two/, 'a tool is one line, with its output under it');
+  // Blocked by the plan gate: one yellow line saying so, not a red error.
+  cli.event({ type: 'tool', id: 'r2', name: 'Edit', arg: 'a.js' });
+  cli.event({ type: 'tool-end', id: 'r2', ok: false, summary: 'PLAN GATE: edits are locked because there is no plan.', detail: '' });
+  cli.event({ type: 'tool', id: 'r3', name: 'Read', arg: 'a.js' });
+  cli.event({ type: 'tool-end', id: 'r3', ok: true, summary: 'lines 1-3 of 3', detail: '' });
+  assert.match(text(), /● Edit a\.js\n {2}⎿ {2}blocked: edits are locked because there is no plan\./);
+  assert.match(text(), /● Read a\.js {2}lines 1-3 of 3/);
+  // The model's words are kept to the first paragraph.
+  cli.event({ type: 'assistant', text: `First point.\n\nSecond paragraph that should not appear. ${'x'.repeat(300)}` });
+  assert.match(text(), /First point\./);
+  assert.doesNotMatch(text(), /Second paragraph/);
   assert.match(shown, /1 - "wrold"\n {5}1 \+ "world"/);
   assert.match(shown, /⎿  1 line changed/);
   assert.match(shown, /╭ Plan {2}Fix the name[\s\S]*FACT {6}line 1 holds it c1 greet\.js:1[\s\S]*ASSUME {4}prints hello world[\s\S]*\[>\] 1\. Correct the spelling/);

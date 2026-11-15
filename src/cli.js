@@ -279,21 +279,34 @@ export class CLI {
         if (this.echoed === e.text) { this.echoed = null; return null; }
         return hang(`${color.cyan('>')} `, e.text, w);
       case 'answer': return `  ${color.cyan('❯')} ${{ y: 'Yes', n: 'No' }[e.text] ?? e.text}`;
-      case 'assistant': return renderMarkdown(e.text, w - 2).split('\n').map((l, i) => (i ? '  ' : `${color.bold('●')} `) + l).join('\n');
+      case 'assistant': {
+        // The model's own words, kept short: the first paragraph, at most about 240 characters.
+        const para = String(e.text).trim().split(/\n\s*\n/)[0];
+        const short = para.length > 240 ? `${para.slice(0, 237).replace(/\s+\S*$/, '')}…` : para;
+        return renderMarkdown(short, w - 2).split('\n').map((l, i) => (i ? '  ' : `${color.dim('●')} `) + color.dim(l)).join('\n');
+      }
       case 'line': return e.text;
       case 'question': return color.yellow(parseChoices(e.text).head.join('\n'));
       case 'tool': {
         this.tools.set(e.id, { name: e.name, arg: e.arg });
-        return `${color.green('●')} ${color.bold(e.name)}${color.dim(`(${clip(e.arg, w - e.name.length - 6)})`)}`;
+        // An edit shows its header now (the diff follows it). Everything else is one line, printed when it finishes.
+        return ['Edit', 'Write'].includes(e.name) ? `${color.green('●')} ${color.bold(e.name)} ${color.dim(clip(e.arg, w - e.name.length - 4))}` : null;
       }
       case 'tool-end': {
         const tool = this.tools.get(e.id) ?? {}, name = tool.name;
         this.lastOutput = { ...tool, detail: e.detail };
-        const out = [(e.ok ? color.dim : color.red)(hang('  ⎿  ', e.summary, w))];
+        const blocked = /^(PLAN GATE|DENIED|NOT SAVED|NOT DONE)/.test(e.summary);
+        if (['Edit', 'Write'].includes(name)) return e.ok ? null : color.dim(hang('  ⎿  ', blocked ? `blocked: ${e.summary.replace(/^(PLAN GATE|DENIED): ?/, '')}` : e.summary, w));
+        // Verify and Step done already print their own green line; do not say it twice.
+        if (['Verify', 'Step done'].includes(name) && e.ok && /verified|checked|committed|marked done|recorded/i.test(e.summary)) return null;
+        const summary = blocked ? `blocked: ${e.summary.replace(/^(PLAN GATE|DENIED|NOT SAVED|NOT DONE): ?/, '')}` : e.summary;
+        const room = Math.max(12, w - (name?.length ?? 4) - summary.length - 8);
+        const head = `${(e.ok ? color.green : blocked ? color.yellow : color.red)('●')} ${color.bold(name ?? 'Tool')} ${color.dim(clip(tool.arg ?? '', room))}  ${(e.ok ? color.dim : blocked ? color.yellow : color.red)(clip(summary, Math.max(20, w - 8)))}`;
+        const out = [head];
         if (name === 'Run') {
           const body = e.detail.split('\n').slice(2).filter((l) => l.trim());
-          for (const l of body.slice(0, 4)) out.push(color.dim(`     ${clip(l, w - 6)}`));
-          if (body.length > 4) out.push(color.dim(`     … +${body.length - 4} lines`));
+          for (const l of body.slice(0, 4)) out.push(color.dim(`    ${clip(l, w - 5)}`));
+          if (body.length > 4) out.push(color.dim(`    … +${body.length - 4} lines`));
         }
         return out.join('\n');
       }

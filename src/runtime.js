@@ -1328,29 +1328,34 @@ REQUEST: ${original}${brief ? `\n\n${brief.text}` : ''}`;
     if (this.branch) tail = commitAll(this.cwd, `eon: remaining work at ${heading === 'DONE' ? 'finish' : 'stop'}`, this.#evidenceBody(summary));
     const ui = this.ui, ok = heading === 'DONE', interactive = Boolean(this.rawUi.event);
     ui.print(`\n${ok ? color.green('✓') : color.red('✗')} ${color.bold(ok ? 'Done' : 'Stopped')}  ${summary ?? ''}`);
+    const bits = [];
     if (this.plan) {
       const counts = new Map();
       for (const c of this.plan.claims) counts.set(c.tag, (counts.get(c.tag) ?? 0) + 1);
       const noun = { fact: 'fact', inference: 'inference', assumption: 'assumption' };
-      ui.print(`  evidence    ${[...counts].map(([t, n]) => `${n} ${noun[t] ? `${noun[t]}${n === 1 ? '' : 's'}` : t}`).join(' · ')}    confidence ${Math.round(confidence(this.plan) * 100)}%`);
-      const open = this.plan.claims.filter((c) => c.load_bearing && c.tag === 'assumption');
-      if (open.length) ui.print(color.yellow(`  unchecked   ${open.map((c) => `${c.id} (${c.text})`).join('; ')}`));
+      bits.push(`evidence ${[...counts].map(([t, n]) => `${n} ${noun[t] ? `${noun[t]}${n === 1 ? '' : 's'}` : t}`).join(' · ')} · confidence ${Math.round(confidence(this.plan) * 100)}%`);
       if (this.everApproved) {
         const left = this.plan.steps.filter((s) => !this.doneSteps.has(s.n)).map((s) => s.n);
-        ui.print(`  steps       ${this.doneSteps.size} of ${this.plan.steps.length} finished${left.length ? color.yellow(` (not finished: ${left.join(', ')})`) : ''}`);
+        bits.push(left.length ? color.yellow(`steps ${this.doneSteps.size}/${this.plan.steps.length} (not finished: ${left.join(', ')})`) : `steps ${this.doneSteps.size}/${this.plan.steps.length}`);
       }
+    }
+    if (this.branch && interactive) bits.push(`⎇ ${this.branch.replace(/^eon\/\d{10,}-?/, '') || this.branch}`);
+    if (bits.length) ui.print(color.dim(`  ${bits.join('  ·  ')}`));
+    if (this.plan) {
+      const open = this.plan.claims.filter((c) => c.load_bearing && c.tag === 'assumption');
+      if (open.length) ui.print(color.yellow(`  unchecked: ${open.map((c) => `${c.id} (${c.text})`).join('; ')}`));
     }
     for (const v of validation ?? []) {
       ui.print(v.skipped ? color.yellow(`  validation not run (not allowed): ${v.cmd}`) : (v.exit === 0 ? color.green : color.red)(`  validation ${v.exit === 0 ? 'passed' : `FAILED (exit ${v.exit})`}: ${v.cmd}`));
     }
     if (this.denied.size) ui.print(color.yellow(`  denied      ${[...this.denied].join(' ; ')} (not allowed without you)`));
     if (this.noGit && this.backup?.count) {
-      ui.print(interactive ? `  changed     ${this.backup.count} file change${this.backup.count === 1 ? '' : 's'}, originals kept in .eon/backups   ${color.dim('/diff · /undo · /discard')}` : `  Originals of changed files are in ${path.relative(this.root, this.backup.dir)}/`);
+      ui.print(interactive ? color.dim(`  ${this.backup.count} file change${this.backup.count === 1 ? '' : 's'}, originals in .eon/backups  ·  /diff · /undo · /discard`) : `  Originals of changed files are in ${path.relative(this.root, this.backup.dir)}/`);
     }
     if (this.branch) {
       if (tail) ui.print(color.dim(`  Uncommitted work was committed as ${tail}.`));
       ui.print(interactive
-        ? `  branch      ${this.branch}   ${color.dim('/diff · /merge · /undo · /discard')}`
+        ? color.dim('  /diff to review · /merge to keep · /undo · /discard')
         : `  Your main checkout is untouched. Review: ${color.bold(`git diff HEAD...${this.branch}`)}   Keep: ${color.bold(`git merge ${this.branch}`)}`);
     }
     if (!interactive) ui.print(color.dim(`  Record: ${path.relative(this.root, this.store.dir)}/`));
