@@ -40,7 +40,7 @@ Type a task. Eon reads your code, shows a plan with the evidence behind each cla
 - **Modes.** `guided` (approve each step), `accept` (approve the plan only), `research` (read-only), `autonomous` (works alone in a worktree).
 - **Sub-agents, MCP servers, hooks.** Read-only helpers in their own chat tab, any MCP tool server (`eon mcp add`), and your own commands around edits.
 - **Pictures.** `@screenshot.png`; models that cannot see get a description from one that can.
-- **Skills.** Short recipes the model loads when a task matches (`fix-bug`, `add-tests`, `review-changes`, `explain-code`, `refactor-safely` come built in). Run one with `/fix-bug the login test fails`, or write your own with `/skills new <name>`. A recipe up front means fewer wasted round trips.
+- **Skills.** Short recipes the model loads when a task matches (`fix-bug`, `add-tests`, `review-changes`, `explain-code`, `refactor-safely`, `ui-work` come built in). Run one with `/fix-bug the login test fails`, or write your own with `/skills new <name>`. A recipe up front means fewer wasted round trips.
 - **Fast mode.** `eon --fast` uses quick level and accept mode: small edits skip the plan, so a small job takes a few messages instead of many.
 - **Memory and lessons.** `EON.md` and memory files, plus rules it learns from its own mistakes.
 - **Safe by default.** Refuses your home folder, asks before commands, redacts secrets, never logs in to GitHub and never pushes.

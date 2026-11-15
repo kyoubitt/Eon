@@ -2007,5 +2007,5 @@ test('skills: built-in, yours and the project\'s are found in that order of prio
   assert.throws(() => newSkill(root, '../evil'), /letters, digits/);
   // the shipped skills are all valid
   const shipped = loadSkills(root, { home: fs.mkdtempSync(path.join(os.tmpdir(), 'eon-x-')) });
-  for (const n of ['fix-bug', 'add-tests', 'review-changes', 'explain-code', 'refactor-safely']) assert.ok(shipped.has(n) && shipped.get(n).body.length > 100 && shipped.get(n).source === 'built in', n);
+  for (const n of ['fix-bug', 'add-tests', 'review-changes', 'explain-code', 'refactor-safely', 'ui-work']) assert.ok(shipped.has(n) && shipped.get(n).body.length > 100 && shipped.get(n).source === 'built in', n);
 });
