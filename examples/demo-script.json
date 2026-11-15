@@ -1,0 +1,7 @@
+[
+ "I'll just fix it.\n```json\n{\"action\": \"edit_file\", \"step\": 1, \"path\": \"greet.js\", \"find\": \"\\\"wrold\\\"\", \"replace\": \"\\\"world\\\"\"}\n```",
+ "Edits are locked, so I will read the file first.\n```json\n{\"action\": \"read_file\", \"path\": \"greet.js\"}\n```",
+ "I have what I need for a plan.\n```json\n{\"action\": \"plan\", \"goal\": \"Fix the misspelled greeting\", \"claims\": [{\"id\": \"c1\", \"text\": \"name is set to \\\"wrold\\\" on line 1\", \"tag\": \"fact\", \"pointer\": \"greet.js:1\"}, {\"id\": \"c2\", \"text\": \"the script prints \\\"hello \\\" plus name\", \"tag\": \"fact\", \"pointer\": \"greet.js:2\"}, {\"id\": \"c3\", \"text\": \"after the fix the script prints hello world\", \"tag\": \"assumption\", \"check\": \"node greet.js\"}], \"steps\": [{\"n\": 1, \"text\": \"Correct the spelling of the name\", \"files\": [\"greet.js\"]}], \"validation\": [\"node greet.js\"]}\n```",
+ "Applying step 1 and running the validation.\n```json\n{\"action\": \"edit_file\", \"step\": 1, \"path\": \"greet.js\", \"find\": \"\\\"wrold\\\"\", \"replace\": \"\\\"world\\\"\"}\n```\n```json\n{\"action\": \"run\", \"cmd\": \"node greet.js\"}\n```",
+ "The output shows hello world.\n```json\n{\"action\": \"verify\", \"claim\": \"c3\", \"run\": \"r5\"}\n```\n```json\n{\"action\": \"step_done\", \"step\": 1, \"summary\": \"Corrected the spelling of the greeting name.\"}\n```\n```json\n{\"action\": \"done\", \"summary\": \"The greeting now prints hello world.\"}\n```"
+]
