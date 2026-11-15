@@ -2,7 +2,11 @@
 
 # Eon
 
+[![tests](https://github.com/kyoubitt/eon/actions/workflows/ci.yml/badge.svg)](https://github.com/kyoubitt/eon/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/kyoubitt/eon)](https://github.com/kyoubitt/eon/releases) [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+
 A coding agent for your terminal that runs on **free web chats** (DeepSeek, Gemini, ChatGPT, Claude, Qwen, Mistral, Grok, Kimi, or any site you add). No API key. The model does the thinking; a local program does the acting and enforces the rules. **Eon plans before it edits.**
+
+![Eon fixing a typo: plan, approval, edit, check, done](examples/demo.gif)
 
 ![How one request flows](examples/architecture.png)
 
@@ -40,7 +44,9 @@ Type a task. Eon reads your code, shows a plan with the evidence behind each cla
 - **Safe by default.** Refuses your home folder, asks before commands, redacts secrets, never logs in to GitHub and never pushes.
 - **Never stuck.** Esc and Ctrl+C always work; human checks and logouts are noticed and continued; crashed sessions offer to resume.
 
-Useful commands: `/plan` `/diff` `/undo` `/usage` `/raw` `/model` `/compact` `/resume` `/check` `/help`.
+Useful commands: `/plan` `/diff` `/undo` `/usage` `/raw` `/export` `/model` `/compact` `/resume` `/check` `/help`.
+
+Maintenance: `eon update` (newest version; Eon also mentions a new one at most once a day, turn off with `/config update-check off`), `eon doctor --fix` (repairs stale locks, damaged settings, a missing browser), `eon export` (a session as a markdown report).
 
 ## Honest notes
 

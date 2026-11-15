@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { Runtime, MODES, LEVELS, LIVE_MODES } from '../src/runtime.js';
 import { TerminalUI, color } from '../src/ui.js';
@@ -20,6 +21,9 @@ import { readStores, teach, forget } from '../src/store.js';
 import { checkImage } from '../src/vision.js';
 import { McpHub, McpServer, PRESETS, addMcpServer, removeMcpServer } from '../src/mcp.js';
 import { loadAgents } from '../src/agents.js';
+import { runFix } from '../src/fix.js';
+import { exportSession } from '../src/export.js';
+import { checkForUpdate, runUpdate, currentVersion } from '../src/update.js';
 import { firstRunChecks, formatChecks, firstRunDone, markFirstRun } from '../src/firstrun.js';
 import { runInspect } from '../src/inspect.js';
 import { showSplash } from '../src/splash.js';
@@ -56,7 +60,10 @@ Usage
   eon setup-local                use a model on your own computer (Ollama) instead of a website
   eon inspect <site>             write ~/.eon/inspect-<site>.txt: the page's structure, no text, to paste for help
   eon mcp list|add|remove|test   connect MCP servers (tools the model can use after you allow them)
+  eon export [number|id]         save a past session as a markdown report
+  eon update                     update Eon to the latest version
   eon first-run [site]           check this computer: Node, git, browser, login, folder
+  eon doctor --fix [--yes]       repair stale locks, damaged settings, a missing browser
   eon doctor [--report]          check this machine; --report writes a text file you can paste to ask for help
 
 Models (all free web chats; no API key)
@@ -104,7 +111,7 @@ const COMMANDS = [
   ['/project ', 'switch to another folder'], ['/status', 'mode, models, branch and plan state'],
   ['/output', 'show the full output of the last command'], ['/init', 'create EON.md with this project\'s commands and conventions'], ['/pr', 'a pull-request description for this session'],
   ['/usage', 'estimated tokens used, per model'], ['/raw', 'the last message Eon sent and the model\'s raw reply'],
-  ['/check', 'check this computer and the chat site'], ['/image ', 'attach a picture to your next message'], ['/mcp', 'MCP servers you connected, and the tools you always allow'], ['/agents', 'sub-agents defined in .eon/agents'],
+  ['/export', 'save this session as a markdown report'], ['/check', 'check this computer and the chat site'], ['/image ', 'attach a picture to your next message'], ['/mcp', 'MCP servers you connected, and the tools you always allow'], ['/agents', 'sub-agents defined in .eon/agents'],
   ['/bell', 'toggle the sound when Eon needs you'], ['/quit', 'leave Eon'],
 ];
 const helpText = () => `${color.bold('Commands')}\n${COMMANDS.map(([c, d]) => `  ${c.trim().padEnd(14)} ${d}`).join('\n')}\n\n${color.dim('Your next message continues the current session. Shift+Tab changes the mode, Esc interrupts, Ctrl+C twice leaves.')}`;
@@ -122,6 +129,8 @@ function parse(argv) {
     else if (a === '--no-splash') opts.noSplash = true;
     else if (a === '--stdin') opts.stdin = true;
     else if (a === '--report') opts.report = true;
+    else if (a === '--fix') opts.fix = true;
+    else if (a === '--yes') opts.yes = true;
     else if (a === '--plain' || a === '-p') opts.plain = true;
     else if (a === '--continue' || a === '-c') opts.cont = true;
     else if (a === '--resume' || a === '-r') opts.resume = /^(\d{1,3}|\d{14}-\S*)$/.test(argv[i + 1] ?? '') ? argv[++i] : '';
@@ -191,6 +200,10 @@ async function siteCommands(first, rest, opts) {
     } finally { ui.close(); }
     return;
   }
+  if (first === 'doctor' && opts.fix) {
+    try { console.log((await runFix({ root: fs.realpathSync(process.cwd()), ask: (q) => ui.ask(q), yes: Boolean(opts.yes) })).join('\n')); } finally { ui.close(); }
+    return;
+  }
   if (first === 'doctor') {
     const report = doctorReport(fs.realpathSync(process.cwd()));
     if (opts.report) {
@@ -199,6 +212,19 @@ async function siteCommands(first, rest, opts) {
       fs.writeFileSync(file, `${report}\n`);
       console.log(`${report}\n\nSaved to ${file.replace(os.homedir(), '~')}. It holds no code and no secrets; you can paste it into a message to ask for help.`);
     } else console.log(`${report}\n\nTo save this as a file you can share: eon doctor --report`);
+    return;
+  }
+  if (first === 'export') {
+    const r = exportSession(fs.realpathSync(process.cwd()), rest[0] ?? '1');
+    console.log(`Saved ${path.relative(process.cwd(), r.file)}`);
+    return;
+  }
+  if (first === 'update') {
+    const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    try {
+      const r = await runUpdate({ root: here, say: (t) => console.log(t) });
+      console.log(r.from === r.to ? `Already up to date (${r.to}).` : `${color.green('✓')} Updated ${r.from} → ${r.to}. Start Eon again to use it.`);
+    } catch (e) { console.log(`${color.red('✗')} ${e.message}\nYou can also download the latest zip from github.com/kyoubitt/eon and run install.bat (Windows) or sh install.sh.`); process.exitCode = 1; }
     return;
   }
   if (first === 'first-run') {
@@ -264,7 +290,7 @@ async function main() {
     return;
   }
   if (first === 'gui' || first === 'web') { console.log('There is no gui any more; just run eon. It works inside the terminal.'); return; }
-  if (['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run'].includes(first)) return siteCommands(first, rest, opts);
+  if (['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export'].includes(first)) return siteCommands(first, rest, opts);
 
   let task = (first === 'run' ? rest : opts.words).join(' ').trim();
   // `git diff | eon -p "review this" --stdin`: what is piped in becomes part of the task.
@@ -551,6 +577,11 @@ async function main() {
         pendingPictures.push(file);
         return ui.print(`Picture added: ${path.basename(file)}. It goes with your next message${firstOf(planSpec()) === 'deepseek' ? ` (DeepSeek cannot see pictures, so ${visionSpec()} will describe it)` : ''}.`);
       }
+      case '/export': {
+        const id = runtime?.id ?? listSessions(root)[0]?.id;
+        if (!id) return ui.print('No session to export yet.');
+        try { const r = exportSession(root, id, { file: arg || null }); return ui.print(`Saved ${path.relative(root, r.file)}. Secrets are redacted; read it before you share it.`); } catch (e) { return ui.print(color.red(e.message)); }
+      }
       case '/check': await firstRun(firstOf(planSpec())); return undefined;
       case '/usage': {
         if (!runtime) return ui.print('No session yet, so nothing has been counted.');
@@ -579,10 +610,11 @@ async function main() {
         return say('Commands always allowed in this project', `${rules.map((r, i) => `  ${i + 1}. ${r}`).join('\n') || color.dim('  (none)')}\n${color.dim('  A rule is an exact command, or ends in :* to allow anything after it (npm run:*).\n  Add: /permissions add <rule>   Remove: /permissions remove <number>')}${opts.allow.length ? `\n  Allowed for this run by --allow: ${opts.allow.join(' ; ')}` : ''}`);
       }
       case '/config': {
-        const keys = { bell: 'bell', splash: 'splash', pace: 'pace', mode: 'mode', level: 'level', model: 'model', 'plan-model': 'planModel', 'build-model': 'buildModel', 'vision-model': 'visionModel', reviewer: 'reviewer' };
+        const keys = { bell: 'bell', splash: 'splash', pace: 'pace', mode: 'mode', level: 'level', model: 'model', 'plan-model': 'planModel', 'build-model': 'buildModel', 'vision-model': 'visionModel', 'update-check': 'updateCheck', reviewer: 'reviewer' };
         const [key, ...val] = args;
         if (key && keys[key] && val.length) {
           const value = val.join('');
+          if (key === 'update-check') { writeConfig({ updateCheck: /^(on|yes|true)$/i.test(value) }); return ui.print(`Update notice: ${/^(on|yes|true)$/i.test(value) ? 'on' : 'off'}.`); }
           if (key === 'splash') { writeConfig({ splash: /^(on|yes|true)$/i.test(value) }); return ui.print(`Intro screen: ${/^(on|yes|true)$/i.test(value) ? 'on' : 'off'}.`); }
           if (key === 'bell') { ui.bell = /^(on|yes|true)$/i.test(value); writeConfig({ bell: ui.bell }); }
           else if (key === 'pace') { if (!/^(slow|normal|fast)$/.test(value)) return ui.print(color.yellow('Choose slow, normal or fast.')); process.env.EON_PACE = value; writeConfig({ pace: value }); }
@@ -664,6 +696,8 @@ async function main() {
       ui.banner({ cwd: root, models: m.split ? `plan ${m.plan} → build ${m.build}` : m.plan, mode: opts.mode, level: opts.level, note: past ? color.dim(`  ${past} past session${past === 1 ? '' : 's'} in this folder: eon -r to resume`) : '' });
       idle();
       const mainSite = firstOf(planSpec());
+      // A once-a-day note when a newer version exists (a plain GET to GitHub; /config update-check off to stop it).
+      checkForUpdate({ root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..') }).then((u) => { if (u) ui.print(color.dim(`  Eon ${u.latest} is available (you have ${u.current}). Run: eon update`)); }).catch(() => {});
       if (!firstRunDone() && !opts.cont && opts.resume === undefined) { try { await firstRun(mainSite); } catch (e) { ui.print(color.dim(`  (the first-start check could not run: ${e.message})`)); } }
       if (sites()[mainSite] && !profileExists()) {
         const a = await ui.ask(`You have not logged in to ${sites()[mainSite].label} yet. Log in now? [y]es / [n]o, later: `);

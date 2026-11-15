@@ -64,8 +64,9 @@ node(L, 280, LW, 92, 'your files', ['git branch, or backups'])
 arrow([(C, 326), (L + LW, 326)]); num((C + L + LW) / 2, 304, 5)
 node(L, 410, LW, 92, 'hooks (yours)', ['formatter etc. around edits'])
 arrow([(C, 456), (L + LW, 456)], dash=True)
-node(L, 560, LW, 118, 'images', ['not built yet; a helper model', 'would describe them as text'], RED, dash=True, tcol=RED)
-arrow([(L + LW, 619), (420, 619), (420, 470), (C, 470)], RED, dash=True)
+node(L, 560, LW, 118, 'pictures', ['@shot.png or /image path', 'text-only models get a', 'description from a helper'], INK, fill='#fff6e9')
+arrow([(L + LW, 619), (420, 619), (420, 470), (C, 470)])
+text(L, 704, 'look, screenshot, inspect_page', 14, BLUE)
 
 # right: the web
 node(R, 280, RW, 92, 'chat tab 1', ['a real browser window'])
@@ -100,7 +101,7 @@ for i, s in enumerate(steps):
     text(L + 40, 806 + i * 40, s, 16)
     if len(s) * 16 * CH > 290: problems.append('step too wide: ' + s)
 
-text(L, 1060, 'solid = works, tested on stand-in sites.   dashed = planned or optional.', 15, BLUE)
+text(L, 1060, 'solid = works, tested on stand-in sites.   dashed = optional, only if you set it up.', 15, BLUE)
 text(L, 1086, 'the live deepseek page itself is untested from the build machine.', 15, BLUE)
 text(W - 60, 1086, 'esc / ctrl+c stop anything', 15, GREY, 400, 'end')
 

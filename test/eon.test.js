@@ -1811,3 +1811,160 @@ test('crash safety: a damaged record is skipped, writes are whole, old and reuse
   // Older than two weeks: not offered.
   assert.equal(interruptedSession(root, { alive: () => false, now: Date.now() + 15 * 86400000 }), null);
 });
+
+// ---- update ----
+
+test('update: versions compare, the notice is limited to once a day and can be turned off', async () => {
+  const { compareVersions, checkForUpdate } = await import('../src/update.js');
+  assert.equal(compareVersions('0.2.0', '0.1.9'), 1);
+  assert.equal(compareVersions('v1.0.0', '1.0.0'), 0);
+  assert.equal(compareVersions('0.1.2', '0.10.0'), -1);
+  assert.equal(compareVersions('garbage', '1.0.0'), 0);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-upd-home-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-upd-root-'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.2' }));
+  const saved = { ...process.env };
+  Object.assign(process.env, { HOME: home, USERPROFILE: home });
+  try {
+    let calls = 0;
+    const fetcher = async () => { calls++; return JSON.stringify({ version: '0.3.0' }); };
+    const now = Date.now();
+    assert.deepEqual(await checkForUpdate({ root, now, fetcher, env: {}, config: {} }), { latest: '0.3.0', current: '0.1.2' });
+    assert.equal(calls, 1);
+    assert.deepEqual(await checkForUpdate({ root, now: now + 3600000, fetcher, env: {}, config: {} }), { latest: '0.3.0', current: '0.1.2' });
+    assert.equal(calls, 1, 'not asked again within a day');
+    await checkForUpdate({ root, now: now + 25 * 3600000, fetcher, env: {}, config: {} });
+    assert.equal(calls, 2);
+    // off switches, an unreachable repo, garbage and an older version: all silent
+    fs.rmSync(path.join(home, '.eon'), { recursive: true, force: true });
+    assert.equal(await checkForUpdate({ root, fetcher, env: { EON_NO_UPDATE_CHECK: '1' }, config: {} }), null);
+    assert.equal(await checkForUpdate({ root, fetcher, env: {}, config: { updateCheck: false } }), null);
+    assert.equal(await checkForUpdate({ root, fetcher: async () => { throw new Error('HTTP 404'); }, env: {}, config: {} }), null);
+    fs.rmSync(path.join(home, '.eon'), { recursive: true, force: true });
+    assert.equal(await checkForUpdate({ root, fetcher: async () => 'not json', env: {}, config: {} }), null);
+    fs.rmSync(path.join(home, '.eon'), { recursive: true, force: true });
+    assert.equal(await checkForUpdate({ root, fetcher: async () => JSON.stringify({ version: '0.1.0' }), env: {}, config: {} }), null);
+  } finally { for (const k of Object.keys(process.env)) delete process.env[k]; Object.assign(process.env, saved); }
+});
+
+test('update: a download replaces Eon\'s files but never node_modules, .eon or .git, and says old -> new', async () => {
+  const { runUpdate } = await import('../src/update.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-upd-inst-'));
+  fs.mkdirSync(path.join(root, 'bin')); fs.mkdirSync(path.join(root, 'node_modules', 'x'), { recursive: true }); fs.mkdirSync(path.join(root, '.eon'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.1.0', dependencies: { playwright: '^1' } }));
+  fs.writeFileSync(path.join(root, 'bin', 'eon.js'), 'old');
+  fs.writeFileSync(path.join(root, 'node_modules', 'x', 'keep.txt'), 'mine');
+  fs.writeFileSync(path.join(root, '.eon', 'notes'), 'mine');
+  // A fake GitHub tarball: eon-main/{package.json,bin/eon.js,node_modules/evil}
+  const fx = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-upd-fx-'));
+  fs.mkdirSync(path.join(fx, 'eon-main', 'bin'), { recursive: true }); fs.mkdirSync(path.join(fx, 'eon-main', 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(fx, 'eon-main', 'package.json'), JSON.stringify({ version: '0.2.0', dependencies: { playwright: '^1' } }));
+  fs.writeFileSync(path.join(fx, 'eon-main', 'bin', 'eon.js'), 'new');
+  fs.writeFileSync(path.join(fx, 'eon-main', 'node_modules', 'evil'), 'should not be copied');
+  execSync('tar -czf ../fixture.tar.gz eon-main', { cwd: fx });
+  const said = [];
+  const r = await runUpdate({ root, say: (t) => said.push(t), downloader: async () => fs.readFileSync(path.join(fx, '..', 'fixture.tar.gz')), npmInstall: false });
+  assert.deepEqual([r.from, r.to, r.how], ['0.1.0', '0.2.0', 'download']);
+  assert.equal(fs.readFileSync(path.join(root, 'bin', 'eon.js'), 'utf8'), 'new');
+  assert.equal(fs.readFileSync(path.join(root, 'node_modules', 'x', 'keep.txt'), 'utf8'), 'mine');
+  assert.ok(!fs.existsSync(path.join(root, 'node_modules', 'evil')));
+  assert.equal(fs.readFileSync(path.join(root, '.eon', 'notes'), 'utf8'), 'mine');
+  // Something that is not Eon changes nothing; a failed download says why.
+  fs.writeFileSync(path.join(fx, 'other.txt'), 'x'); fs.mkdirSync(path.join(fx, 'junk')); fs.writeFileSync(path.join(fx, 'junk', 'a'), 'x');
+  execSync('tar -czf ../junk.tar.gz junk', { cwd: fx });
+  await assert.rejects(runUpdate({ root, downloader: async () => fs.readFileSync(path.join(fx, '..', 'junk.tar.gz')), npmInstall: false }), /does not look like Eon/);
+  assert.equal(fs.readFileSync(path.join(root, 'bin', 'eon.js'), 'utf8'), 'new');
+  await assert.rejects(runUpdate({ root, downloader: async () => { throw new Error('the download answered HTTP 404'); }, npmInstall: false }), /HTTP 404/);
+});
+
+// ---- export ----
+
+test('/export: one markdown report with the plan, evidence, commands, diff and result, secrets redacted', async () => {
+  const { exportSession } = await import('../src/export.js');
+  const root = tempRepo();
+  const plan = {
+    action: 'plan', goal: 'Fix the misspelled name',
+    claims: [
+      { id: 'c1', text: 'name is set to "wrold" on line 1', tag: 'fact', pointer: 'greet.js:1' },
+      { id: 'c2', text: 'the script then prints hello world', tag: 'assumption', check: 'node greet.js' },
+    ],
+    steps: [{ n: 1, text: 'Correct the spelling', files: ['greet.js'] }], validation: ['node greet.js'],
+  };
+  const edit = { action: 'edit_file', step: 1, path: 'greet.js', find: '"wrold"', replace: '"world"' };
+  const provider = new MockProvider([
+    block({ action: 'read_file', path: 'greet.js' }),
+    block(plan),
+    `${block(edit)}\n${block({ action: 'run', cmd: 'node greet.js' })}`,
+    `${block({ action: 'verify', claim: 'c2', run: 'r4' })}\n${block({ action: 'step_done', step: 1, summary: 'fixed' })}\n${block({ action: 'done', summary: 'Greeting fixed. (key was sk-supersecret-123456789012)' })}`,
+  ]);
+  const result = await new Runtime({ root, provider, ui: new ScriptedUI(() => 'y'), mode: 'guided' }).run('Fix the greeting');
+  assert.equal(result.status, 'done');
+  const { file, text } = exportSession(root, result.id);
+  assert.equal(file, path.join(root, '.eon', 'exports', `${result.id}.md`));
+  assert.ok(fs.existsSync(file));
+  assert.match(text, /^# Eon session: Fix the greeting/);
+  assert.match(text, /\| c1 \| name is set to "wrold" on line 1 \| fact \| greet\.js:1 \|/);
+  assert.match(text, /\| c2 \|[^\n]*\| (verified|checked) \|/);
+  assert.match(text, /\*\*Confidence:\*\* \d+%/);
+  assert.match(text, /- \[x\] 1\. Correct the spelling \(greet\.js\)/);
+  assert.match(text, /`node greet\.js` → exit 0/);
+  assert.match(text, /```diff[\s\S]*-const name = "wrold"[\s\S]*\+const name = "world"/);
+  assert.match(text, /## Result\nDone: Greeting fixed/);
+  assert.doesNotMatch(text, /sk-supersecret/, 'secrets are redacted');
+  assert.throws(() => exportSession(root, 'nope'), /no saved session/);
+  // Without git: the diff comes from the backups.
+  const plain = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'eon-exp-nogit-')));
+  fs.writeFileSync(path.join(plain, 'greet.js'), 'const name = "wrold";\n');
+  const r2 = await new Runtime({ root: plain, provider: new MockProvider([block({ action: 'edit_file', path: 'greet.js', find: '"wrold"', replace: '"world"' }), block({ action: 'done', summary: 'ok' })]), ui: new ScriptedUI(() => 'y'), mode: 'guided', level: 'quick', noGit: true }).run('fix it');
+  assert.match(exportSession(plain, r2.id).text, /Git:\*\* not used[\s\S]*-const name = "wrold"[\s\S]*\+const name = "world"/);
+});
+
+// ---- doctor --fix ----
+
+test('doctor --fix repairs stale locks, damaged settings and a missing home, asks first, and leaves a clean setup alone', async () => {
+  const { findProblems, runFix } = await import('../src/fix.js');
+  const root = tempRepo();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-fix-home-'));
+  const old = Date.now() - 3600000;
+  // clean (with a browser) -> nothing to fix
+  fs.mkdirSync(path.join(home, '.eon'));
+  assert.deepEqual(await runFix({ root, home, chrome: () => '/usr/bin/chrome', ask: async () => { throw new Error('must not ask'); } }), ['Nothing to fix: no leftover locks, damaged settings or missing pieces found.']);
+  // make a mess
+  fs.writeFileSync(path.join(root, '.git', 'index.lock'), '');
+  fs.utimesSync(path.join(root, '.git', 'index.lock'), old / 1000, old / 1000);
+  fs.mkdirSync(path.join(root, '.eon', 'tasks', 'dead-session'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.eon', 'tasks', 'dead-session', 'lock.json'), JSON.stringify({ pid: 999999, updated: old }));
+  fs.writeFileSync(path.join(home, '.eon', 'config.json'), '{"mode": "gui');
+  fs.writeFileSync(path.join(home, '.eon', 'selectors.json'), '{"deepseek":{"input":"textarea"}}');
+  fs.mkdirSync(path.join(home, '.eon', 'chrome'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.eon', 'chrome', 'SingletonLock'), '');
+  fs.utimesSync(path.join(home, '.eon', 'chrome', 'SingletonLock'), old / 1000, old / 1000);
+  let ran = '';
+  const deps = { root, home, alive: () => false, chrome: () => null, run: (cmd) => { ran = cmd; return true; } };
+  const ids = findProblems(deps).map((p) => p.id);
+  assert.deepEqual(ids.sort(), ['bad:config.json', 'browser', 'chrome:SingletonLock', 'index-lock', 'session-lock:dead-session'].sort());
+  // saying no changes nothing
+  const asked = [];
+  const no = await runFix({ ...deps, ask: async (q) => { asked.push(q); return 'n'; } });
+  assert.equal(asked.length, 5);
+  assert.ok(no.filter((l) => /left alone/.test(l)).length === 5);
+  assert.ok(fs.existsSync(path.join(root, '.git', 'index.lock')));
+  // yes repairs each, and a second look finds nothing
+  const done = await runFix({ ...deps, yes: true, ask: async () => { throw new Error('--yes must not ask'); } });
+  assert.equal(done.filter((l) => /✓/.test(l)).length, 5, done.join('\n'));
+  assert.ok(!fs.existsSync(path.join(root, '.git', 'index.lock')));
+  assert.ok(!fs.existsSync(path.join(root, '.eon', 'tasks', 'dead-session', 'lock.json')));
+  assert.ok(fs.existsSync(path.join(home, '.eon', 'config.json.bak')));
+  assert.equal(fs.readFileSync(path.join(home, '.eon', 'config.json'), 'utf8').trim(), '{}');
+  assert.equal(fs.readFileSync(path.join(home, '.eon', 'selectors.json'), 'utf8'), '{"deepseek":{"input":"textarea"}}', 'a healthy file is untouched');
+  assert.ok(!fs.existsSync(path.join(home, '.eon', 'chrome', 'SingletonLock')));
+  assert.equal(ran, 'npx playwright install chromium');
+  assert.equal(findProblems({ ...deps, chrome: () => '/usr/bin/chrome' }).length, 0);
+  // a live lock and a young git lock are not touched
+  fs.writeFileSync(path.join(root, '.git', 'index.lock'), '');
+  fs.writeFileSync(path.join(root, '.eon', 'tasks', 'dead-session', 'lock.json'), JSON.stringify({ pid: process.pid, updated: Date.now() }));
+  assert.equal(findProblems({ ...deps, alive: () => true, chrome: () => 'x' }).length, 0);
+  // no ~/.eon at all
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-fix-bare-'));
+  assert.deepEqual(findProblems({ root, home: bare, chrome: () => 'x', alive: () => true }).map((p) => p.id), ['home']);
+});

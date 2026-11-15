@@ -361,6 +361,12 @@ Attach a picture with `@screenshot.png` in your message, or `/image path` before
 
 The model has three actions for this: `look` (ask the helper one precise question about a picture, for example "what colour is the Save button?"), `screenshot` (a picture of a web page, taken with a browser; localhost is free, other addresses ask you first) and `inspect_page` (the page's elements with their sizes and colours as text, which a text-only model reads more exactly than any description of a picture).
 
+## Updating, exporting and repairing
+
+- **`eon update`** updates Eon in place: a git copy is pulled, anything else is replaced from GitHub's download, never touching `node_modules` or `.eon`. At most once a day Eon asks GitHub which version is newest (a plain request, nothing about you is sent) and prints one line if yours is older. Stop it with `/config update-check off` or `EON_NO_UPDATE_CHECK=1`. It needs the repository to be public.
+- **`/export [file]`** and **`eon export [number|id]`** write one markdown report per session to `.eon/exports/`: the requests, the plan with each claim's tag and evidence, steps done, commands that ran with exit codes, the diff and the result. Secrets are redacted; read it before you share it.
+- **`eon doctor --fix`** (`--yes` to skip the questions) repairs what it finds: a stale `.git/index.lock`, session locks from an Eon that is gone, a damaged `~/.eon/config.json` or `selectors.json` (kept as `.bak`), a leftover browser lock, a missing browser. It asks before each fix and says "Nothing to fix" when all is well.
+
 ## Moving from Keel
 
 Eon was called Keel. The first time you start it, the old `~/.keel` folder (your login included) and each project's `.keel/` folder (sessions, memory, research, worktrees) are moved to `.eon` automatically. Old `keel/` branches and `keel:` commits still work with `/merge`, `/undo` and `eon -r`. The old `keel` command is gone.
