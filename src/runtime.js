@@ -13,6 +13,7 @@ import { McpHub, capResult } from './mcp.js';
 import { checkImage, describeImage, takeShot, inspectUrl } from './vision.js';
 import { loadAgents, limitWords } from './agents.js';
 import { loadSkills } from './skills.js';
+import { buildBrief } from './brief.js';
 import { isRepo, hasCommits, isDirty, excludeEonDir, startTaskBranch, commitAll, fileTree, listFiles, tagCheckpoint, undoLastCommit } from './git.js';
 import { Store, taskId, score } from './store.js';
 import { color, TAG, bar } from './ui.js';
@@ -51,7 +52,7 @@ export const LIVE_MODES = ['guided', 'accept', 'research'];
 export const LEVELS = ['focused', 'quick', 'architect'];
 
 export class Runtime {
-  constructor({ root, provider, models = null, resume = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), ui, reviewer = null, researcher = null, allow = [], allowHosts = [], fetcher = fetchDoc, mode = 'guided', level = 'focused', inPlace = false, noGit = false, agentFactory = null, visionFactory = null, isChild = false, budgetChars = 120000, maxTurns = 80 }) {
+  constructor({ root, provider, models = null, resume = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), ui, reviewer = null, researcher = null, allow = [], allowHosts = [], fetcher = fetchDoc, mode = 'guided', level = 'focused', inPlace = false, noGit = false, agentFactory = null, visionFactory = null, brief = true, isChild = false, budgetChars = 120000, maxTurns = 80 }) {
     if (!MODES.includes(mode)) throw new Error(`unknown mode "${mode}" (use ${MODES.join(', ')})`);
     if (!LEVELS.includes(level)) throw new Error(`unknown level "${level}" (use ${LEVELS.join(', ')})`);
     // Everything shown to the user is also written to the session record, so the session can be shown again later.
@@ -68,7 +69,7 @@ export class Runtime {
       update: (snap) => raw.update?.(snap),
       ...(raw.event ? { event: (e) => raw.event(e) } : {}),
     };
-    Object.assign(this, { resume, tasks: [], root: fs.realpathSync(root), provider, ui, reviewer, researcher, allow, allowHosts: new Set(allowHosts), fetcher, mode, level, inPlace, noGit, backup: null, usage: {}, agentFactory, visionFactory, visionHelper: null, pendingImages: [], inputImages: [], isChild, budgetChars, maxTurns, child: null, delegations: 0, mcpAllowed: new Set() });
+    Object.assign(this, { resume, tasks: [], root: fs.realpathSync(root), provider, ui, reviewer, researcher, allow, allowHosts: new Set(allowHosts), fetcher, mode, level, inPlace, noGit, backup: null, usage: {}, agentFactory, visionFactory, briefOn: brief, visionHelper: null, pendingImages: [], inputImages: [], isChild, budgetChars, maxTurns, child: null, delegations: 0, mcpAllowed: new Set() });
     this.agents = loadAgents(this.root);
     this.skills = loadSkills(this.root);
     this.mcp = new McpHub(this.root);
@@ -340,6 +341,13 @@ export class Runtime {
     }
 
     // Things the user attached (files, a command they ran) go with the first message of this request.
+    // A short request is expanded locally: the skill that fits, the files a search points at, the command that proves it.
+    if (this.briefOn && !this.isChild && !resumed) {
+      try {
+        const b = buildBrief(this.task, { root: this.cwd, skills: this.skills });
+        if (b) { this.pendingContext = `${this.pendingContext}\n\n${b.text}`.trim(); this.ui.print(color.dim(`  brief added: ${b.summary}`)); }
+      } catch { /* a brief is a convenience; never block the request */ }
+    }
     if (this.inputImages.length) { const note = await this.#imageContext(this.inputImages); this.inputImages = []; if (note) this.pendingContext = `${this.pendingContext}\n\n${note}`.trim(); }
     if (this.pendingContext) { msg = `${msg}\n\n${this.pendingContext}`; this.pendingContext = ''; }
     let silent = 0;

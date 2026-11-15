@@ -2020,3 +2020,53 @@ test('skills: built-in, yours and the project\'s are found in that order of prio
     assert.doesNotMatch(k.body, /claude|anthropic/i, `${n}: no tool attribution`);
   }
 });
+
+// ---- task brief ----
+
+test('brief: a short request gets the fitting skill, the files a search points at and the command that proves it', async () => {
+  const { buildBrief, keywords, pickSkill } = await import('../src/brief.js');
+  const { loadSkills } = await import('../src/skills.js');
+  const root = tempRepo();
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src', 'auth.js'), 'export function checkPassword(user, input) {\n  return user.password === input; // login check\n}\n');
+  fs.writeFileSync(path.join(root, 'src', 'login.js'), 'import { checkPassword } from "./auth.js";\nexport const login = (u, p) => checkPassword(u, p);\n');
+  fs.writeFileSync(path.join(root, 'src', 'unrelated.js'), 'export const x = 1;\n');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  const skills = loadSkills(root, { home: fs.mkdtempSync(path.join(os.tmpdir(), 'eon-b-')) });
+  const b = buildBrief('fix the login bug: checkPassword accepts a wrong password', { root, skills });
+  assert.match(b.text, /SKILL TO FOLLOW: fix-bug/);
+  assert.match(b.text, /Reproduce/, 'the skill steps are inlined');
+  assert.match(b.text, /- src\/auth\.js:\d+ \(\d+ matches?\)/);
+  assert.match(b.text, /- src\/login\.js/);
+  assert.doesNotMatch(b.text, /unrelated\.js/);
+  assert.match(b.text, /run `npm test` before and after/);
+  assert.match(b.summary, /skill fix-bug · 2 likely files · check: npm test/);
+  // which skill: first match in priority order
+  assert.equal(pickSkill('how does the session store work?', skills), 'explain-code');
+  assert.equal(pickSkill('the page is too slow to load', skills), 'ui-work', 'a page request is UI work');
+  assert.equal(pickSkill('make the api slower to respond? no, faster: optimize the query', skills), 'performance');
+  assert.equal(pickSkill('write tests for the parser', skills), 'add-tests');
+  assert.equal(pickSkill('upgrade the dependencies', skills), 'upgrade-deps');
+  assert.equal(pickSkill('add a dark mode toggle', skills), 'ui-work');
+  assert.equal(pickSkill('add CSV export', skills), 'plan-feature');
+  assert.equal(pickSkill('hello there my friend', skills), null);
+  // keywords: quoted text and code names first, stop words never
+  assert.deepEqual(keywords('make "retry limit" work in fetchUser please'), ['retry limit', 'fetchUser', 'retry']);
+  // nothing to add, or already a skill call: no brief
+  assert.equal(buildBrief('hi', { root, skills }), null);
+  assert.equal(buildBrief('Use the skill "fix-bug" for this: x', { root, skills }), null);
+  assert.equal(buildBrief('thank you for helping me out here', { root: fs.mkdtempSync(path.join(os.tmpdir(), 'eon-empty-')), skills: new Map() }), null);
+});
+
+test('brief: it reaches the model with the first message, says what it added, and can be turned off', async () => {
+  const root = tempRepo();
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  const mk = () => new MockProvider([block({ action: 'done', summary: 'x' })]);
+  const on = mk(), ui = new ScriptedUI(() => 'y');
+  await new Runtime({ root, provider: on, ui, mode: 'research' }).run('fix the wrold typo in greet.js');
+  assert.match(on.sent[0], /TASK BRIEF \(added by Eon[\s\S]*SKILL TO FOLLOW: fix-bug[\s\S]*greet\.js[\s\S]*npm test/);
+  assert.match(ui.lines.join('\n'), /brief added: skill fix-bug · \d likely files? · check: npm test/);
+  const off = mk();
+  await new Runtime({ root, provider: off, ui: new ScriptedUI(() => 'y'), mode: 'research', brief: false }).run('fix the wrold typo in greet.js');
+  assert.doesNotMatch(off.sent[0], /TASK BRIEF/);
+});

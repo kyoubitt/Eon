@@ -367,6 +367,16 @@ A skill is a folder with a `SKILL.md`: a `name`, a one-line `description` saying
 
 `eon --fast` is `--level quick --mode accept`: edits under 20 lines in one file need no plan, and when a plan is needed you approve it once. It does not shorten the pauses between messages; that is `--pace`, and a human-like pace is part of not tripping a site's checks.
 
+## Task briefs
+
+Before the first message of each request, Eon looks at your words and adds three things when it can, all locally (no extra model call, nothing sent anywhere):
+
+1. **A skill.** Your request is matched against what each built-in or custom skill is for (words like fix, crash, slow, upgrade, README, button, explain). The best match's steps are put in the message so the model does not have to ask for them. A request that already says `/skill-name` is left alone.
+2. **Likely files.** Up to three keywords (quoted text, code-looking names such as `checkPassword`, then longer plain words) are searched in the project; files with the most hits are listed with the first matching line. The model is told to read them before assuming.
+3. **A check.** The project's test, build or lint command (found in `package.json`, `pyproject.toml`, `go.mod` and so on) is named as the way to prove the change, so the plan's validation starts from something real.
+
+One dim line tells you what was added. It is a guess made by pattern matching, so the model is told to ignore a skill that does not fit. Off: `/config brief off` or `--no-brief`.
+
 ## Updating, exporting and repairing
 
 - **`eon update`** updates Eon in place: a git copy is pulled, anything else is replaced from GitHub's download, never touching `node_modules` or `.eon`. At most once a day Eon asks GitHub which version is newest (a plain request, nothing about you is sent) and prints one line if yours is older. Stop it with `/config update-check off` or `EON_NO_UPDATE_CHECK=1`. It needs the repository to be public.
