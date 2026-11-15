@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="120" alt="Eon"></p>
+
 # Eon
 
 A coding agent for your terminal that runs on **free web chats** (DeepSeek, Gemini, ChatGPT, Claude, Qwen, Mistral, Grok, Kimi, or any site you add). No API key. The model does the thinking; a local program does the acting and enforces the rules. **Eon plans before it edits.**
