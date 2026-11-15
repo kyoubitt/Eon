@@ -27,5 +27,9 @@
     "install.sh",
     "install.ps1",
     "install.bat"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyoubitt/eon.git"
+  }
 }

@@ -1,10 +1,10 @@
 #!/bin/sh
 # Installs Eon on Mac and Linux. Run it from the unzipped folder:  sh install.sh
 # Or, for a public copy of the repo, with one line (it downloads Eon to ~/eon first):
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/kyoubitt/eon/main/install.sh | sh
 set -e
 
-REPO="${EON_REPO:-OWNER/REPO}"
+REPO="${EON_REPO:-kyoubitt/eon}"
 say() { printf '\n== %s\n' "$1"; }
 die() { printf '\nInstall stopped: %s\n' "$1" >&2; exit 1; }
 

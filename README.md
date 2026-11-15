@@ -19,7 +19,7 @@ It needs Node.js 18+ and git; on a Mac with Homebrew it installs Node for you, o
 **Download and install in one line** (for when you have a public copy of the repository; fill in the repository name):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kyoubitt/eon/main/install.sh | sh
 ```
 
 **By hand** (what the installers do): install Node.js 18+ and Git, then inside the folder run `npm run setup`.
