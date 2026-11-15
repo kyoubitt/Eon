@@ -46,6 +46,24 @@ const VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('../pac
 const readJson = (name, fallback) => { try { return JSON.parse(fs.readFileSync(path.join(EON_HOME, name), 'utf8')); } catch { return fallback; } };
 const writeJson = (name, value) => { try { fs.mkdirSync(EON_HOME, { recursive: true }); fs.writeFileSync(path.join(EON_HOME, name), JSON.stringify(value, null, 2)); } catch { /* settings are a convenience */ } };
 
+const SHORT_HELP = `eon: a coding agent that runs on free web chats. It plans before it edits.
+
+Start
+  eon                       open Eon in this folder
+  eon "fix the login bug"   start with a task
+  eon -r                    go back to a past session
+  eon login                 log in to DeepSeek once (a browser window opens)
+  eon check                 test that it works end to end
+
+Handy
+  eon --fast                small jobs with fewer round trips
+  eon --model deepseek,qwen   fall back to the next model at a usage limit
+  eon update                get the newest version
+  eon doctor --fix          repair common problems
+  eon doctor --report       a text file to paste when asking for help
+
+Inside Eon type /help. Everything else: eon --help --all   or the guide: docs/guide.md`;
+
 const HELP = `eon - a coding agent on free web chats (no API key), with an enforced plan gate
 
 Usage
@@ -118,7 +136,14 @@ const COMMANDS = [
   ['/skills', 'recipes the model can follow: /skills new <name>'], ['/export', 'save this session as a markdown report'], ['/check', 'check this computer and the chat site'], ['/image ', 'attach a picture to your next message'], ['/mcp', 'MCP servers you connected, and the tools you always allow'], ['/agents', 'sub-agents defined in .eon/agents'],
   ['/bell', 'toggle the sound when Eon needs you'], ['/quit', 'leave Eon'],
 ];
-const helpText = () => `${color.bold('Commands')}\n${COMMANDS.map(([c, d]) => `  ${c.trim().padEnd(14)} ${d}`).join('\n')}\n\n${color.dim('Your next message continues the current session. Shift+Tab changes the mode, Esc interrupts, Ctrl+C twice leaves.')}`;
+const ESSENTIAL = ['/plan', '/diff', '/undo', '/merge', '/discard', '/mode ', '/model ', '/resume', '/new', '/skills', '/help'];
+// The slash menu lists the everyday commands first.
+COMMANDS.sort((a, b) => (ESSENTIAL.includes(a[0]) ? ESSENTIAL.indexOf(a[0]) : 99) - (ESSENTIAL.includes(b[0]) ? ESSENTIAL.indexOf(b[0]) : 99));
+const helpText = (all = false) => {
+  const rows = all ? COMMANDS : COMMANDS.filter(([c]) => ESSENTIAL.includes(c));
+  const more = all ? '' : `\n  ${color.dim('/help all'.padEnd(14))} ${color.dim('every command')}`;
+  return `${color.bold(all ? 'All commands' : 'Commands')}\n${rows.map(([c, d]) => `  ${c.trim().padEnd(14)} ${d}`).join('\n')}${more}\n\n${color.dim('Type a task to start, or @file to attach a file, # to save a note, ! to run a command. Esc stops, Ctrl+C twice leaves.')}`;
+};
 
 function parse(argv) {
   const cfg = readConfig();
@@ -142,6 +167,7 @@ function parse(argv) {
     else if (a === '--continue' || a === '-c') opts.cont = true;
     else if (a === '--resume' || a === '-r') opts.resume = /^(\d{1,3}|\d{14}-\S*)$/.test(argv[i + 1] ?? '') ? argv[++i] : '';
     else if (a === '--help' || a === '-h') opts.help = true;
+    else if (a === '--all') opts.all = true;
     else if (valued.includes(a)) {
       if (argv[i + 1] === undefined) throw new Error(`${a} needs a value`);
       const key = a.slice(2).replace(/-(.)/g, (_, c) => c.toUpperCase());
@@ -273,7 +299,7 @@ async function siteCommands(first, rest, opts) {
 async function main() {
   const opts = parse(process.argv.slice(2));
   const [first, ...rest] = opts.words;
-  if (opts.help) { console.log(HELP); return; }
+  if (opts.help || first === 'help') { console.log(process.argv.includes('--all') ? HELP : SHORT_HELP); return; }
   if (first === 'mcp') {
     const [sub, name, ...cmd] = rest;
     const root = fs.realpathSync(process.cwd());
@@ -301,6 +327,13 @@ async function main() {
   if (first === 'gui' || first === 'web') { console.log('There is no gui any more; just run eon. It works inside the terminal.'); return; }
   if (['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export'].includes(first)) return siteCommands(first, rest, opts);
 
+  // One word that is almost a command ("eon udpate") is probably a typo, not a task.
+  if (opts.words.length === 1 && /^[a-z-]{3,12}$/.test(first)) {
+    const known = ['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export', 'mcp', 'help', 'run'];
+    const dist = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
+    const near = known.find((k) => k !== first && dist(first, k) <= 2 && dist(first, k) < first.length / 2);
+    if (near && !known.includes(first)) { console.log(`Did you mean: eon ${near}\n(To use "${first}" as a task, put it in quotes with more words, for example: eon "${first} the readme".)`); return; }
+  }
   let task = (first === 'run' ? rest : opts.words).join(' ').trim();
   // `git diff | eon -p "review this" --stdin`: what is piped in becomes part of the task.
   // Only when asked: a script that pipes answers (`yes y | eon ...`) must not be swallowed.
@@ -310,7 +343,7 @@ async function main() {
   }
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY) && !opts.plain;
   const resuming = opts.resume !== undefined || opts.cont;
-  if (!interactive && !task) { console.log(HELP); return; }
+  if (!interactive && !task) { console.log(SHORT_HELP); return; }
   if (!interactive && resuming) throw new Error('Resuming needs an interactive terminal.');
 
   const config = { bell: true, ...readConfig() };
@@ -402,7 +435,9 @@ async function main() {
   const firstRun = async (site, { offerTest = true } = {}) => {
     ui.print(color.bold('Checking this computer'));
     const res = await firstRunChecks({ root, site });
-    ui.print(formatChecks(res, color));
+    const problems = res.filter((r) => !r.ok && !r.info);
+    // All good: one line. Anything wrong: the full list with the fix for each.
+    ui.print(problems.length || !offerTest ? formatChecks(res, color) : color.green(`  ✓ This computer is ready (${res.filter((r) => r.ok && !r.info).length} checks passed).`));
     markFirstRun(res);
     const loggedIn = res.find((r) => r.name === 'login')?.ok;
     if (offerTest && loggedIn && /^y/i.test(await ui.ask(`Test ${sites()[site].label} now (sends a few short messages, takes about a minute)? [y]es / later: `))) {
@@ -440,7 +475,7 @@ async function main() {
     const stores = () => readStores(root);
     const yes = async (q) => /^y/i.test(await ui.ask(q));
     switch (cmd) {
-      case '/help': return ui.print(helpText());
+      case '/help': return ui.print(helpText(/^all$/i.test(arg)));
       case '/new': case '/clear': runtime = null; idle(); return ui.print('Started a fresh session. Your next message begins a new chat and a new branch.');
       case '/resume': case '/history': { const s = await pickSession(); if (s) resumeSession(s); return undefined; }
       case '/mode': case '/level': {

@@ -2132,3 +2132,21 @@ test('rewrite: the model restates the request first; you can accept it, keep you
   await new Runtime({ root, provider: p, ui: new ScriptedUI(() => 'y'), mode: 'research', rewrite: true }).run('Use the skill "fix-bug" for this: the typo');
   assert.equal(p.sent.length, 1);
 });
+
+test('help is short by default, full with --all, and a mistyped command is caught', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const eon = (...args) => spawnSync(process.execPath, [path.resolve('bin/eon.js'), ...args], { encoding: 'utf8', env: { ...process.env, EON_NO_UPDATE_CHECK: '1' } });
+  const short = eon('--help').stdout;
+  assert.ok(short.split('\n').length <= 20, `short help is ${short.split('\n').length} lines`);
+  assert.match(short, /eon login[\s\S]*eon check[\s\S]*eon --fast[\s\S]*eon doctor --fix/);
+  assert.equal(eon('help').stdout, short, '"eon help" is the same');
+  const all = eon('--help', '--all').stdout;
+  assert.ok(all.split('\n').length > 40);
+  assert.match(all, /--allow-host[\s\S]*--rewrite/);
+  for (const [typo, want] of [['udpate', 'update'], ['docter', 'doctor'], ['loign', 'login'], ['chekc', 'check']]) {
+    const out = eon(typo).stdout;
+    assert.match(out, new RegExp(`Did you mean: eon ${want}\\b`), typo);
+  }
+  // a real task is never mistaken for a typo
+  assert.doesNotMatch(eon('-p', 'fix the update button', '--mode', 'research', '--model', 'mock').stdout + eon('-p', 'fix the update button', '--mode', 'research', '--model', 'mock').stderr, /Did you mean/);
+});

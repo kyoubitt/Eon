@@ -1,5 +1,7 @@
 # Eon
 
+**Contents:** [Install](#install) · [Can the web model edit my files?](#can-the-web-model-edit-my-files) · [Use](#use) · [Models](#models) · [How it connects, and looking like a normal browser user](#how-it-connects-and-looking-like-a-normal-browser-user) · [What the runtime enforces](#what-the-runtime-enforces) · [The four stores](#the-four-stores) · [Autonomous mode](#autonomous-mode) · [Plan review](#plan-review) · [Limits you should know](#limits-you-should-know) · [Sub-agents, MCP servers and hooks](#sub-agents-mcp-servers-and-hooks) · [Pictures](#pictures) · [Skills and fast mode](#skills-and-fast-mode) · [Task briefs](#task-briefs) · [Updating, exporting and repairing](#updating-exporting-and-repairing) · [Moving from Keel](#moving-from-keel) · [Try it without a login](#try-it-without-a-login) · [Tests](#tests)
+
 A coding agent for your terminal that runs on free web chats: DeepSeek by default, or Gemini, ChatGPT, Claude, Qwen, Mistral, Grok, Kimi, or any site you add. It needs no API key. The model does the thinking; a local program does the acting and enforces the rules, so the model cannot skip them. Eon plans before it edits.
 
 ![Eon in a terminal](../examples/terminal-screenshot.png)
