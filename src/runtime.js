@@ -52,7 +52,7 @@ export const LIVE_MODES = ['guided', 'accept', 'research'];
 export const LEVELS = ['focused', 'quick', 'architect'];
 
 export class Runtime {
-  constructor({ root, provider, models = null, resume = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), ui, reviewer = null, researcher = null, allow = [], allowHosts = [], fetcher = fetchDoc, mode = 'guided', level = 'focused', inPlace = false, noGit = false, agentFactory = null, visionFactory = null, brief = true, isChild = false, budgetChars = 120000, maxTurns = 80 }) {
+  constructor({ root, provider, models = null, resume = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), ui, reviewer = null, researcher = null, allow = [], allowHosts = [], fetcher = fetchDoc, mode = 'guided', level = 'focused', inPlace = false, noGit = false, agentFactory = null, visionFactory = null, brief = true, rewrite = false, isChild = false, budgetChars = 120000, maxTurns = 80 }) {
     if (!MODES.includes(mode)) throw new Error(`unknown mode "${mode}" (use ${MODES.join(', ')})`);
     if (!LEVELS.includes(level)) throw new Error(`unknown level "${level}" (use ${LEVELS.join(', ')})`);
     // Everything shown to the user is also written to the session record, so the session can be shown again later.
@@ -69,7 +69,7 @@ export class Runtime {
       update: (snap) => raw.update?.(snap),
       ...(raw.event ? { event: (e) => raw.event(e) } : {}),
     };
-    Object.assign(this, { resume, tasks: [], root: fs.realpathSync(root), provider, ui, reviewer, researcher, allow, allowHosts: new Set(allowHosts), fetcher, mode, level, inPlace, noGit, backup: null, usage: {}, agentFactory, visionFactory, briefOn: brief, visionHelper: null, pendingImages: [], inputImages: [], isChild, budgetChars, maxTurns, child: null, delegations: 0, mcpAllowed: new Set() });
+    Object.assign(this, { resume, tasks: [], root: fs.realpathSync(root), provider, ui, reviewer, researcher, allow, allowHosts: new Set(allowHosts), fetcher, mode, level, inPlace, noGit, backup: null, usage: {}, agentFactory, visionFactory, briefOn: brief, rewriteOn: rewrite, visionHelper: null, pendingImages: [], inputImages: [], isChild, budgetChars, maxTurns, child: null, delegations: 0, mcpAllowed: new Set() });
     this.agents = loadAgents(this.root);
     this.skills = loadSkills(this.root);
     this.mcp = new McpHub(this.root);
@@ -328,6 +328,7 @@ export class Runtime {
       Object.assign(this, { plan: null, review: null, approved: false, everApproved: false, replans: 0, quick: { files: new Set(), lines: 0 } });
       this.approvedSteps.clear();
       this.doneSteps.clear();
+      await this.#rewrite();
       msg = followUpPrompt({ task: this.task, lessons: this.surfaced, branch: this.branch, interrupted, notice: this.notice });
       this.notice = '';
       // After /compact the chat is new, so the instructions go first again.
@@ -337,6 +338,7 @@ export class Runtime {
       this.provider = this.models.plan;
       await this.provider.newChat();
       this.chatOpen = this.provider;
+      await this.#rewrite();
       msg = this.#seed();
     }
 
@@ -706,6 +708,43 @@ Tool result ids up to r${this.n} exist and can still be used as pointers. Re-rea
     const { exit, output } = await runCommand(this.cwd, a.cmd);
     this.#note(color.dim(`    exit ${exit}`));
     return { text: `$ ${a.cmd}\nexit ${exit}\n${output}` };
+  }
+
+  /**
+   * Optional (--rewrite): one extra message in which the model restates a short request as a precise task
+   * (goal, scope, how we will know it is done). You see it and can accept it, keep your own words, or type a better one.
+   * Any failure leaves your original words in place.
+   */
+  async #rewrite() {
+    if (!this.rewriteOn || this.isChild || this.stopRequested) return;
+    const original = this.task;
+    if (String(original).trim().length < 8 || /^Use the skill "/.test(original)) return;
+    let brief = null;
+    try { brief = this.briefOn ? buildBrief(original, { root: this.cwd, skills: this.skills }) : null; } catch { /* no brief */ }
+    this.ui.print(color.dim('  asking the model to restate your request as a precise task...'));
+    const ask = `Before we start, restate this short request as a precise task for yourself. Reply in plain text, at most 120 words, no JSON, no actions, exactly in this form:
+GOAL: one sentence
+SCOPE: the files or areas involved, and what is out of scope
+DONE WHEN: 2 to 4 checks anyone could run (name the command)
+ASK FIRST: one question, only if something essential is unclear; otherwise the word nothing
+Do not solve it yet.
+
+REQUEST: ${original}${brief ? `\n\n${brief.text}` : ''}`;
+    let reply = '';
+    try { reply = String(await this.#send(ask)); } catch (e) { if (e instanceof LimitError || e instanceof Interrupted) throw e; return; }
+    const goal = /^GOAL:\s*\S/m.test(reply) && !/\{\s*"action"/.test(reply) ? reply.trim() : null;
+    if (!goal || goal.length > 1800) { this.ui.print(color.dim('  (the model did not answer in the right form, so your own words are used)')); return; }
+    const first = (k) => (new RegExp(`^${k}:\\s*(.+)$`, 'm').exec(goal)?.[1] ?? '').trim();
+    let text = goal.replace(/^ASK FIRST:.*$/m, '').replace(/\n{3,}/g, '\n\n').trim();
+    const question = first('ASK FIRST');
+    this.ui.print(`${color.bold('Eon understood your request as:')}\n${text.split('\n').map((l) => `  ${l}`).join('\n')}`);
+    let answer = '';
+    if (!this.auto && question && !/^(nothing|none|no|n\/a)\b/i.test(question)) answer = (await this.#confirm(`${color.bold('The model asks first:')} ${question}\n> `, '')).trim();
+    if (answer) text += `\nUser's answer to "${question}": ${answer}`;
+    const pick = (await this.#confirm('Use this? [y]es / [o]riginal words / or type a better version: ', 'y', { edit: true })).trim();
+    if (/^o(riginal)?$/i.test(pick)) { this.ui.print(color.dim('  Using your own words.')); return; }
+    const chosen = pick && !/^y(es)?$/i.test(pick) ? pick : text;
+    this.task = `${chosen}\n\n(The user's own words were: "${String(original).split('\n')[0].slice(0, 300)}")`;
   }
 
   /** The model that can see, when the main one cannot. Made on first use. */

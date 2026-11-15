@@ -375,6 +375,8 @@ Before the first message of each request, Eon looks at your words and adds three
 2. **Likely files.** Up to three keywords (quoted text, code-looking names such as `checkPassword`, then longer plain words) are searched in the project; files with the most hits are listed with the first matching line. The model is told to read them before assuming.
 3. **A check.** The project's test, build or lint command (found in `package.json`, `pyproject.toml`, `go.mod` and so on) is named as the way to prove the change, so the plan's validation starts from something real.
 
+**Rewrite mode (`--rewrite`, or `/config rewrite on`).** The bigger version: before the work starts the model gets one extra message asking it to restate your request in a fixed form (GOAL, SCOPE, DONE WHEN, and one question only if something essential is unclear). You see the result and choose: Enter to use it, `o` to keep your own words, or type a better version. The brief above is included so the restatement is grounded in your files. In accept and autonomous modes it is used without asking. If the model answers in the wrong form, Eon says so and uses your words. It costs one message per request, so it is off by default; it helps most when you type very short or vague requests.
+
 One dim line tells you what was added. It is a guess made by pattern matching, so the model is told to ignore a skill that does not fit. Off: `/config brief off` or `--no-brief`.
 
 ## Updating, exporting and repairing

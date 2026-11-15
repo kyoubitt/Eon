@@ -90,6 +90,7 @@ Options
   --allow "<cmd>"       a command that may run without asking, e.g. --allow "npm test" (repeatable)
   --allow-host <host>   a documentation site that may be fetched without asking (repeatable)
   --in-place            use a new branch in this checkout instead of a worktree
+  --rewrite             the model restates each request as a precise task first (one extra message)
   --no-brief            do not expand short requests (skill, likely files, check command)
   --fast                quick level + accept mode: fewer round trips for small jobs
   --stdin               add text piped into eon to the task, e.g. git diff | eon -p "review this" --stdin
@@ -135,6 +136,7 @@ function parse(argv) {
     else if (a === '--fix') opts.fix = true;
     else if (a === '--fast') opts.fast = true;
     else if (a === '--no-brief') opts.noBrief = true;
+    else if (a === '--rewrite') opts.rewrite = true;
     else if (a === '--yes') opts.yes = true;
     else if (a === '--plain' || a === '-p') opts.plain = true;
     else if (a === '--continue' || a === '-c') opts.cont = true;
@@ -347,7 +349,7 @@ async function main() {
   const pendingPictures = [];
   const makeRuntime = (extra = {}) => new Runtime({
     root, models: models(), ui, reviewer: reviewerFor(opts.level), researcher: researcherFor(),
-    allow: opts.allow, allowHosts: opts.allowHost, mode: opts.mode, level: opts.level, inPlace: opts.inPlace, noGit: opts.noGit, brief: !opts.noBrief && config.brief !== false,
+    allow: opts.allow, allowHosts: opts.allowHost, mode: opts.mode, level: opts.level, inPlace: opts.inPlace, noGit: opts.noGit, brief: !opts.noBrief && config.brief !== false, rewrite: Boolean(opts.rewrite || config.rewrite === true),
     // A sub-agent gets its own browser tab, so the main chat is not disturbed.
     visionFactory: () => { try { return pool('vision', visionSpec(), opts.script, 'vision'); } catch { return null; } },
     agentFactory: (spec) => { try { return pool('agent', spec ?? firstOf(planSpec()), opts.script, 'sub-agent'); } catch { return null; } }, ...extra,
@@ -622,10 +624,11 @@ async function main() {
         return say('Commands always allowed in this project', `${rules.map((r, i) => `  ${i + 1}. ${r}`).join('\n') || color.dim('  (none)')}\n${color.dim('  A rule is an exact command, or ends in :* to allow anything after it (npm run:*).\n  Add: /permissions add <rule>   Remove: /permissions remove <number>')}${opts.allow.length ? `\n  Allowed for this run by --allow: ${opts.allow.join(' ; ')}` : ''}`);
       }
       case '/config': {
-        const keys = { bell: 'bell', splash: 'splash', pace: 'pace', mode: 'mode', level: 'level', model: 'model', 'plan-model': 'planModel', 'build-model': 'buildModel', 'vision-model': 'visionModel', 'update-check': 'updateCheck', brief: 'brief', reviewer: 'reviewer' };
+        const keys = { bell: 'bell', splash: 'splash', pace: 'pace', mode: 'mode', level: 'level', model: 'model', 'plan-model': 'planModel', 'build-model': 'buildModel', 'vision-model': 'visionModel', 'update-check': 'updateCheck', brief: 'brief', rewrite: 'rewrite', reviewer: 'reviewer' };
         const [key, ...val] = args;
         if (key && keys[key] && val.length) {
           const value = val.join('');
+          if (key === 'rewrite') { writeConfig({ rewrite: /^(on|yes|true)$/i.test(value) }); return ui.print(`Rewrite requests with the model: ${/^(on|yes|true)$/i.test(value) ? 'on (one extra message per request)' : 'off'} (applies to new sessions).`); }
           if (key === 'brief') { writeConfig({ brief: /^(on|yes|true)$/i.test(value) }); return ui.print(`Task brief: ${/^(on|yes|true)$/i.test(value) ? 'on' : 'off'} (applies to new sessions).`); }
           if (key === 'update-check') { writeConfig({ updateCheck: /^(on|yes|true)$/i.test(value) }); return ui.print(`Update notice: ${/^(on|yes|true)$/i.test(value) ? 'on' : 'off'}.`); }
           if (key === 'splash') { writeConfig({ splash: /^(on|yes|true)$/i.test(value) }); return ui.print(`Intro screen: ${/^(on|yes|true)$/i.test(value) ? 'on' : 'off'}.`); }

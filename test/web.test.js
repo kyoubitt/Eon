@@ -324,3 +324,22 @@ test('a picture is uploaded through the page\'s hidden file box, with the messag
     bareServer = bare;
   } finally { await closeBrowser(); await fake.close(); await bareServer?.close(); }
 });
+
+test('rewrite through a real browser: the restated task is sent first, shown, accepted, and the run finishes', { timeout: 120000 }, async (t) => {
+  if (!chromium) return t.skip('Playwright is not installed here');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'eon-rw-')));
+  fs.writeFileSync(path.join(root, 'greet.js'), 'const name = "wrold";\nconsole.log("hello " + name);\n');
+  execSync('git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -q -m start', { cwd: root });
+  const restated = 'GOAL: Correct the misspelled name in greet.js.\nSCOPE: greet.js only.\nDONE WHEN: node greet.js prints hello world.\nASK FIRST: nothing';
+  const fake = await startFakeChat({ stream: true }, [restated, `Done.\n${block({ action: 'done', summary: 'looked' })}`]);
+  const chat = new WebChat('deepseek', { ui: new ScriptedUI(), minGapMs: 0, jitterMs: 0, stableMs: 400, selectors: { url: fake.url, input: '.composer', message: '.reply', stop: '.generating' } });
+  const ui = new ScriptedUI(() => '');
+  try {
+    const result = await new Runtime({ root, provider: chat, ui, mode: 'research', rewrite: true }).run('fix the wrold typo in greet.js');
+    assert.equal(result.status, 'done');
+    assert.equal(fake.received.length, 2, 'one rewrite message, then the seed');
+    assert.match(fake.received[0], /^Before we start, restate this short request[\s\S]*REQUEST: fix the wrold typo/);
+    assert.match(fake.received[1], /GOAL: Correct the misspelled name in greet\.js\.[\s\S]*The user's own words were/);
+    assert.match(ui.lines.join('\n'), /Eon understood your request as:[\s\S]*GOAL: Correct the misspelled name/);
+  } finally { await closeBrowser(); await fake.close(); }
+});

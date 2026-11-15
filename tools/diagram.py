@@ -57,7 +57,9 @@ node(C, 120, CW, 92, 'terminal', ['status line, diffs, Esc stops'])
 arrow([(L + LW, 166), (C, 166)]); num(L + LW + 35, 148, 1)
 
 node(C, 280, CW, 200, 'runtime', ['reads the reply as ACTIONS', 'plan gate: no edit without', 'an approved plan', 'keeps evidence, saves session'], BLUE, fill='#eef1ff', sw=3)
-arrow([(C + CW / 2, 212), (C + CW / 2, 280)]); num(C + CW / 2 + 28, 250, 2)
+node(R, 120, RW, 100, 'task brief', ['skill, files, check', 'optional: model rewrite'], BLUE, fill='#eef1ff', tcol=BLUE)
+arrow([(C + CW, 166), (R, 166)])
+arrow([(R + RW / 2, 220), (R + RW / 2, 250), (C + CW - 60, 250), (C + CW - 60, 280)])
 
 # left of runtime
 node(L, 280, LW, 92, 'your files', ['git branch, or backups'])

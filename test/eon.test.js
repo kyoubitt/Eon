@@ -2070,3 +2070,65 @@ test('brief: it reaches the model with the first message, says what it added, an
   await new Runtime({ root, provider: off, ui: new ScriptedUI(() => 'y'), mode: 'research', brief: false }).run('fix the wrold typo in greet.js');
   assert.doesNotMatch(off.sent[0], /TASK BRIEF/);
 });
+
+// ---- rewrite (the bigger version) ----
+
+test('rewrite: the model restates the request first; you can accept it, keep your words, or type a better one', async () => {
+  const root = tempRepo();
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+  const restated = 'GOAL: Correct the misspelled name in greet.js so it prints "hello world".\nSCOPE: greet.js only; no other files.\nDONE WHEN: `node greet.js` prints hello world; `npm test` still passes.\nASK FIRST: nothing';
+  const run = async ({ replies, answers, mode = 'guided', rewrite = true }) => {
+    const provider = new MockProvider(replies);
+    const asked = [];
+    const ui = new ScriptedUI((q) => { asked.push(q); return answers.shift() ?? ''; });
+    await new Runtime({ root, provider, ui, mode, rewrite }).run('fix the wrold typo in greet.js');
+    return { provider, ui, asked };
+  };
+  const done = block({ action: 'done', summary: 'x' });
+
+  // accepted with Enter: the rewrite request goes first, the seed carries the restated task
+  const a = await run({ replies: [restated, done], answers: [''] });
+  assert.equal(a.provider.sent.length, 2, 'exactly one extra message');
+  assert.match(a.provider.sent[0], /^Before we start, restate this short request[\s\S]*REQUEST: fix the wrold typo in greet\.js[\s\S]*TASK BRIEF/);
+  assert.doesNotMatch(a.provider.sent[0], /You are the reasoning engine/, 'the instructions are not sent twice');
+  assert.match(a.provider.sent[1], /You are the reasoning engine of Eon[\s\S]*GOAL: Correct the misspelled name[\s\S]*DONE WHEN: `node greet\.js`[\s\S]*The user's own words were: "fix the wrold typo in greet\.js"/);
+  assert.doesNotMatch(a.provider.sent[1], /ASK FIRST/);
+  assert.match(a.ui.lines.join('\n'), /Eon understood your request as:[\s\S]*GOAL: Correct the misspelled name/);
+  assert.match(a.asked.join('\n'), /Use this\? \[y\]es/);
+
+  // "o": keep the original words
+  const o = await run({ replies: [restated, done], answers: ['o'] });
+  assert.match(o.provider.sent[1], /TASK[\s\S]*fix the wrold typo in greet\.js/);
+  assert.doesNotMatch(o.provider.sent[1], /GOAL: Correct the misspelled/);
+
+  // typing a better version replaces it
+  const t = await run({ replies: [restated, done], answers: ['only touch line 1 of greet.js'] });
+  assert.match(t.provider.sent[1], /only touch line 1 of greet\.js[\s\S]*The user's own words were/);
+  assert.doesNotMatch(t.provider.sent[1], /GOAL: Correct/);
+
+  // a question from the model is put to you and the answer is kept
+  const q = await run({ replies: [restated.replace('ASK FIRST: nothing', 'ASK FIRST: Should the greeting keep the space?'), done], answers: ['yes keep it', ''] });
+  assert.match(q.asked.join('\n'), /The model asks first: Should the greeting keep the space\?/);
+  assert.match(q.provider.sent[1], /User's answer to "Should the greeting keep the space\?": yes keep it/);
+
+  // a bad reply (an action, no GOAL, too long) falls back to the original words with a plain note
+  for (const bad of [done, 'Sure, I will fix that now.', `GOAL: ${'x'.repeat(2000)}`]) {
+    const b = await run({ replies: [bad, done], answers: [] });
+    assert.equal(b.provider.sent.length, 2);
+    assert.doesNotMatch(b.provider.sent[1], /The user's own words were/);
+    assert.match(b.ui.lines.join('\n'), /did not answer in the right form, so your own words are used/);
+  }
+
+  // accept mode and autonomous mode do not stop to ask whether to use it
+  const acc = await run({ replies: [restated, done], answers: [], mode: 'accept' });
+  assert.match(acc.provider.sent[1], /GOAL: Correct the misspelled name/);
+  assert.equal(acc.asked.length, 0);
+
+  // off (the default): no extra message at all
+  const off = await run({ replies: [done], answers: [], rewrite: false });
+  assert.equal(off.provider.sent.length, 1);
+  // a request that already names a skill is not rewritten
+  const p = new MockProvider([done]);
+  await new Runtime({ root, provider: p, ui: new ScriptedUI(() => 'y'), mode: 'research', rewrite: true }).run('Use the skill "fix-bug" for this: the typo');
+  assert.equal(p.sent.length, 1);
+});
