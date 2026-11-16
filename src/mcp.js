@@ -27,7 +27,8 @@ export class McpServer {
 
   async start() {
     if (this.child) return;
-    const child = spawn(this.spec.command, this.spec.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...this.spec.env }, shell: process.platform === 'win32' });
+    const win = process.platform === 'win32';
+    const child = spawn(win ? shellQuote(this.spec.command) : this.spec.command, win ? (this.spec.args ?? []).map(shellQuote) : this.spec.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...this.spec.env }, shell: win });
     this.child = child;
     child.stdout.on('data', (d) => this.#data(String(d)));
     child.stderr.on('data', (d) => { this.stderr = (this.stderr + d).slice(-2000); });
@@ -86,6 +87,9 @@ export class McpServer {
 }
 
 /** The servers of a session. Started only when the model asks for one and you have allowed it. */
+/** For cmd.exe: wrap anything with a space or special character in quotes (paths such as C:\\Program Files\\nodejs). */
+export const shellQuote = (t) => { const x = String(t); return /[\s"&|<>^()]/.test(x) && !/^".*"$/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; };
+
 export class McpHub {
   constructor(root) { this.root = root; this.config = loadMcpConfig(root); this.running = new Map(); }
 

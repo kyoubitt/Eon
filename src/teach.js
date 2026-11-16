@@ -72,7 +72,16 @@ const PAGE_SCRIPT = `(() => {
 const selectorsFile = () => path.join(os.homedir(), '.eon', 'selectors.json');
 
 /** Save the selectors for one site, keeping anything else already in the file. */
+/** A selector that points at the whole page, never at one reply or one box. */
+export const badSelector = (sel) => typeof sel === 'string' && /^\s*(html|body|:root)([.#:\[\s>,]|$)/i.test(sel);
+
+/** Drop entries that point at the whole page (learned from a check page by mistake). */
+export const cleanSelectors = (entry = {}) => Object.fromEntries(Object.entries(entry).filter(([, v]) => !(badSelector(v) || (Array.isArray(v) && v.some(badSelector)))));
+
 export function saveSelectors(site, selectors) {
+  const ok = cleanSelectors(selectors);
+  if (!Object.keys(ok).length) return;
+  selectors = ok;
   const file = selectorsFile();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const all = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};

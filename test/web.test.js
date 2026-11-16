@@ -10,7 +10,9 @@ import { startFakeChat } from '../support/fake-chat.js';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-web-home-'));
 process.env.HOME = home;
+process.env.USERPROFILE = home; // Windows reads this, not HOME
 process.env.EON_PACE = 'fast';
+process.env.EON_BUDGET = '0'; // the message count has its own tests
 process.env.EON_HEADLESS = '1';
 process.env.EON_BROWSER = 'playwright';
 
@@ -42,7 +44,9 @@ site('sends a message and reads the reply, code-block labels and all', {}, [DONE
   assert.deepEqual(fake.received, ['hello there']);
   assert.match(reply, /json\s+Copy\s+\{"action":"done"/);
   assert.deepEqual(extractActions(reply).map((a) => a.action), ['done']);
-  assert.equal(await chat.page.evaluate(() => navigator.webdriver), false, 'the page is not told it is automated');
+  // Eon does not disguise itself: the browser is launched without any flag meant to hide automation.
+  const src = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'src', 'providers', 'web-chat.js'), 'utf8');
+  assert.doesNotMatch(src, /AutomationControlled|enable-automation/);
 });
 
 site('works with a rich-text (contenteditable) box too', { editable: true }, [DONE], async ({ chat, fake }) => {
@@ -399,4 +403,30 @@ test('harness: a page that never takes the message fails clearly and quickly, an
   assert.match(text, /deepseek: 1 of 2 scenarios passed, 1 failed/);
   assert.doesNotMatch(text, /harness-ok|"action"|<<<<<<</, 'no page text, only counts and timings');
   assert.match(summary('x', [{ ok: true }]), /This site works with Eon/);
+});
+
+test('a suspension notice stops Eon at once: nothing is sent, and the site is left alone for the rest of the run', { timeout: 90000 }, async (t) => {
+  if (!chromium) return t.skip('Playwright is not installed here');
+  const fake = await startFakeChat({ suspended: true }, [DONE]);
+  const ui = new ScriptedUI(() => 'y');
+  const chat = new WebChat('deepseek', { ui, minGapMs: 0, jitterMs: 0, stableMs: 400, selectors: { url: fake.url, input: '.composer', message: '.reply' } });
+  const { LimitError } = await import('../src/providers/limits.js');
+  try {
+    await assert.rejects(async () => { await chat.newChat(); await chat.send('hello'); }, (e) => e instanceof LimitError && e.kind === 'blocked' && /suspended/i.test(e.message));
+    await assert.rejects(() => chat.send('again'), (e) => e instanceof LimitError && e.kind === 'blocked' && /nothing more is sent/.test(e.message));
+    assert.equal(fake.received.length, 0, 'not one message reached the site');
+  } finally { await closeBrowser(); await fake.close(); }
+});
+
+test('a human check that keeps coming back is not retried forever', { timeout: 90000 }, async (t) => {
+  if (!chromium) return t.skip('Playwright is not installed here');
+  const fake = await startFakeChat({ challenge: true }, [DONE]);
+  let asked = 0;
+  const ui = new ScriptedUI(() => { asked++; return 'd'; }); // says done, but never solves it
+  const chat = new WebChat('deepseek', { ui, minGapMs: 0, jitterMs: 0, stableMs: 400, selectors: { url: fake.url, input: '.composer', message: '.reply' } });
+  const { LimitError } = await import('../src/providers/limits.js');
+  try {
+    await assert.rejects(async () => { await chat.newChat(); await chat.send('hi'); }, (e) => e instanceof LimitError && e.kind === 'skipped' && /keeps asking/.test(e.message));
+    assert.ok(asked <= 2, `asked ${asked} times`);
+  } finally { await closeBrowser(); await fake.close(); }
 });

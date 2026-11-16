@@ -52,7 +52,7 @@ export const LIVE_MODES = ['guided', 'accept', 'research'];
 export const LEVELS = ['focused', 'quick', 'architect'];
 
 export class Runtime {
-  constructor({ root, provider, models = null, resume = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), ui, reviewer = null, researcher = null, allow = [], allowHosts = [], fetcher = fetchDoc, mode = 'guided', level = 'focused', inPlace = false, noGit = false, agentFactory = null, visionFactory = null, brief = true, rewrite = false, isChild = false, budgetChars = 120000, maxTurns = 80 }) {
+  constructor({ root, provider, models = null, resume = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), ui, reviewer = null, researcher = null, allow = [], allowHosts = [], fetcher = fetchDoc, mode = 'guided', level = 'focused', inPlace = false, noGit = false, agentFactory = null, visionFactory = null, brief = true, rewrite = false, features = null, isChild = false, budgetChars = 120000, maxTurns = 80 }) {
     if (!MODES.includes(mode)) throw new Error(`unknown mode "${mode}" (use ${MODES.join(', ')})`);
     if (!LEVELS.includes(level)) throw new Error(`unknown level "${level}" (use ${LEVELS.join(', ')})`);
     // Everything shown to the user is also written to the session record, so the session can be shown again later.
@@ -70,10 +70,11 @@ export class Runtime {
       ...(raw.event ? { event: (e) => raw.event(e) } : {}),
     };
     Object.assign(this, { resume, tasks: [], root: fs.realpathSync(root), provider, ui, reviewer, researcher, allow, allowHosts: new Set(allowHosts), fetcher, mode, level, inPlace, noGit, backup: null, usage: {}, agentFactory, visionFactory, briefOn: brief, rewriteOn: rewrite, visionHelper: null, pendingImages: [], inputImages: [], isChild, budgetChars, maxTurns, child: null, delegations: 0, mcpAllowed: new Set() });
+    this.features = features ?? {};
     this.agents = loadAgents(this.root);
     this.skills = loadSkills(this.root);
     this.mcp = new McpHub(this.root);
-    this.hooks = isChild ? null : new Hooks(this.root, { auto: mode === 'autonomous', confirm: async (q) => yes(await this.#confirm(q, 'n')) });
+    this.hooks = isChild || this.features.hooks === false ? null : new Hooks(this.root, { auto: mode === 'autonomous', confirm: async (q) => yes(await this.#confirm(q, 'n')) });
     // One model may plan and another build. With a single model both roles are the same object.
     this.models = { plan: models?.plan ?? provider, build: models?.build ?? models?.plan ?? provider };
     this.provider = this.models.plan;
@@ -281,7 +282,7 @@ export class Runtime {
     } catch (e) {
       if (e instanceof Interrupted) return this.#stopped();
       if (!(e instanceof LimitError)) throw e;
-      this.#report('STOPPED', `${e.message}${e.kind === 'limit' ? ', and no other model is available' : ''}. Your work so far is kept; send a message to try again.`);
+      this.#report('STOPPED', `${e.message}${e.kind === 'limit' ? ', and no other model is available' : ''}. ${e.kind === 'blocked' ? 'Nothing more will be sent to that site until you restart Eon.' : 'Your work so far is kept; send a message to try again.'}`);
       return this.#result(e.kind === 'limit' ? 'limit' : 'skipped');
     } finally {
       this.busy = false;
@@ -482,7 +483,7 @@ Tool result ids up to r${this.n} exist and can still be used as pointers. Re-rea
         project: this.store.projectNotes(),
         instructions: this.memoryText(),
         detected: describeCommands(detectCommands(this.cwd)),
-        agents: this.isChild ? [] : [...this.agents.values()], skills: this.isChild ? [] : [...this.skills.values()].slice(0, 20), mcp: this.isChild ? [] : this.mcp.names,
+        delegate: !this.isChild && this.features.agents !== false, agents: this.isChild || this.features.agents === false ? [] : [...this.agents.values()], skills: this.isChild ? [] : [...this.skills.values()].slice(0, 20), mcp: this.isChild || this.features.mcp === false ? [] : this.mcp.names,
         tree: files ? fileTree(this.cwd, files) : '(not listed because the project is large; use list_dir and search)',
         map: budget ? repoMap(this.cwd, listFiles(this.cwd), budget) : '',
       });
@@ -824,6 +825,7 @@ REQUEST: ${original}${brief ? `\n\n${brief.text}` : ''}`;
 
   /** Hand one read-only investigation to a fresh chat. Its short summary comes back as a tool result. */
   async #delegate(a) {
+    if (this.features.agents === false) return { text: 'ERROR: sub-agents are switched off (eon features on agents).' };
     if (this.isChild) return { text: 'ERROR: a sub-agent cannot start another sub-agent.' };
     if (this.delegations >= 3) return { text: 'ERROR: at most 3 sub-agent tasks per request. Work with what you have.' };
     const task = String(a.task ?? '').trim();
@@ -856,6 +858,7 @@ REQUEST: ${original}${brief ? `\n\n${brief.text}` : ''}`;
 
   /** MCP: list a server's tools, describe one, or call one (after you allow it). */
   async #mcp(a, describe) {
+    if (this.features.mcp === false) return { text: 'ERROR: MCP servers are switched off (eon features on mcp).' };
     let server;
     try { server = this.mcp.server(String(a.server)); } catch (e) { return { text: `ERROR: ${e.message}` }; }
     const name = String(a.server), startRule = `mcp:${name}`;

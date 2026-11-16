@@ -16,7 +16,8 @@ import { createRequire } from 'node:module';
 import { LimitError, Interrupted, looksLimited } from './limits.js';
 import { migrateHome } from '../migrate.js';
 import { looksComplete } from '../protocol.js';
-import { saveSelectors } from '../teach.js';
+import { sentToday, countMessage, budgetFor, backoffMs } from '../budget.js';
+import { saveSelectors, cleanSelectors, badSelector } from '../teach.js';
 import { inspectPage } from '../inspect.js';
 import { discoverInput, discoverSendButton, discoverReply, prepareSend } from '../discover.js';
 
@@ -101,6 +102,8 @@ const pause = (min, max) => sleep((min + Math.random() * (max - min)) * pace());
 let context = null;
 let browser = null;
 let attached = false;
+// A site that showed a suspension or ban notice is left alone for the rest of this run: nothing more is sent to it.
+const paused = new Map();
 let firstPageTaken = false;
 
 function loadPlaywright() {
@@ -109,6 +112,14 @@ function loadPlaywright() {
       throw new Error('Playwright is not installed. Run: npm install playwright && npx playwright install chromium');
     }
   });
+}
+
+/** Playwright's own downloaded Chromium, if it is there (used when no Chrome or Edge is installed). */
+export function playwrightBrowser() {
+  try {
+    const exe = createRequire(import.meta.url)('playwright').chromium.executablePath();
+    return exe && fs.existsSync(exe) ? exe : null;
+  } catch { return null; }
 }
 
 /** Your own Chrome or Edge, if there is one. */
@@ -137,7 +148,7 @@ async function cdpUp(port) {
 
 /**
  * Start your own browser as a normal window with its own profile and a local debugging port, and
- * connect to it. It is not started by an automation library, so it looks like an ordinary browser.
+ * connect to it. It is your own browser with your own profile, so nothing about it is hidden or disguised.
  */
 async function attachBrowser(chromium) {
   const port = cdpPort();
@@ -163,10 +174,12 @@ async function launchPlaywright(chromium) {
     try {
       return await chromium.launchPersistentContext(path.join(home(), 'browser'), {
         headless: process.env.EON_HEADLESS === '1', viewport: null, channel,
-        ignoreDefaultArgs: ['--enable-automation'],
-        args: ['--disable-blink-features=AutomationControlled', '--no-first-run'],
+        args: ['--no-first-run'],
       });
     } catch (e) { last = e; }
+  }
+  if (/already in use|ProcessSingleton|SingletonLock|user data directory is already/i.test(String(last?.message))) {
+    throw new Error('The Eon browser window from an earlier command is still open. Close it, then run the command again (Eon opens it by itself when needed).');
   }
   throw last;
 }
@@ -211,7 +224,8 @@ export class WebChat {
     const SITES = sites();
     if (!SITES[site]) throw new Error(`unknown chat site "${site}". Known: ${Object.keys(SITES).join(', ')}`);
     const file = path.join(home(), 'selectors.json');
-    const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8'))[site] ?? {} : {};
+    let saved = {};
+    try { saved = cleanSelectors(fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8'))[site] ?? {} : {}); } catch { /* a damaged file is ignored; eon doctor --fix repairs it */ }
     this.sel = { stop: null, ...SITES[site], ...saved, ...selectors };
     this.name = `${this.sel.label} web`;
     this.limitKey = site;
@@ -290,6 +304,19 @@ export class WebChat {
     return null;
   }
 
+  /** A notice that the account is suspended, banned or restricted. Returns the sentence the page used, or null. */
+  async #blocked() {
+    const text = await this.page.evaluate(() => (document.body?.innerText ?? '').slice(0, 4000)).catch(() => '');
+    const m = /[^\n.]*(account (has been |is |was )?(suspended|banned|disabled|restricted|locked)|(suspended|banned) (until|for)|violation of (the )?(user|our|service)[a-z ]{0,12}polic)[^\n.]*/i.exec(text);
+    return m ? m[0].trim().slice(0, 200) : null;
+  }
+
+  /** Stop at once and send nothing more to this site until Eon is restarted. */
+  #halt(notice) {
+    paused.set(this.limitKey, notice);
+    throw new LimitError(this.name, '', { reason: `shows this notice: "${notice}". Eon has stopped sending to it, so nothing more can upset the account. Sort it out on the site itself`, kind: 'blocked' });
+  }
+
   /** A login page: a password box, or a log in / sign up page with no chat on it. */
   async #loginWall() {
     return this.page.evaluate(() => {
@@ -307,6 +334,8 @@ export class WebChat {
   }
 
   async #handoffChallenge() {
+    // One check is normal. If it keeps coming back, more attempts only make it worse: stop and let the account rest.
+    if ((this.handoffs = (this.handoffs ?? 0) + 1) > 2) throw new LimitError(this.name, '', { reason: 'keeps asking for a human check, so Eon stopped instead of trying again. Rest a while, then try once', kind: 'skipped' });
     await this.page.bringToFront().catch(() => {});
     const shot = await this.#debug('check');
     const answer = await this.ui.ask(`⚠ ${this.sel.label} wants you to verify you are human. The browser window is in front.${shot ? `\n  (screenshot: ${shot})` : ''}\n  Solve the check there; Eon carries on by itself when it is done.\n[d]one continue / [s]kip this model: `, { until: () => this.#clear(), autoAnswer: 'd' });
@@ -323,6 +352,7 @@ export class WebChat {
   async #ready() {
     for (;;) {
       let visible = await this.#inputVisible(1500);
+      if (!visible) { const notice = await this.#blocked(); if (notice) this.#halt(notice); }
       if (await this.#challenge(visible)) { await this.#handoffChallenge(); continue; }
       if (await this.#loginWall()) { await this.#handoffLogin(); continue; }
       visible ||= await this.#inputVisible(6000);
@@ -392,7 +422,9 @@ export class WebChat {
   /** The known selectors found no reply: look at what changed on the page since the message was sent. */
   async #learnReply(sent, before) {
     const found = await discoverReply(this.page, sent).catch(() => null);
-    if (!found?.selector || list(this.sel.message).includes(found.selector)) return false;
+    if (!found?.selector || list(this.sel.message).includes(found.selector) || badSelector(found.selector)) return false;
+    // Never learn from a page that is asking for a check, a login or showing a notice: it is not a reply.
+    if ((await this.#challenge(await this.#inputVisible(300))) || (await this.#loginWall()) || (await this.#blocked())) return false;
     const count = await this.page.locator(found.selector).count().catch(() => 0);
     if (!count) return false;
     this.sel.message = [found.selector, ...list(this.sel.message)];
@@ -524,9 +556,35 @@ export class WebChat {
     await this.#nap(1200 + 600 * images.length); // the page shows a thumbnail when it has the file
   }
 
+  /**
+   * One message and its reply. Around it: a count of today's messages (asking before a very busy day), and a growing
+   * wait after failures, with a stop after three in a row, so a problem never turns into hammering the site.
+   */
   async send(text, { images = [] } = {}) {
+    const budget = budgetFor();
+    if (budget && !paused.has(this.limitKey) && sentToday(this.limitKey) >= budget && !this.overBudgetOk) {
+      const answer = await this.ui.ask(`Eon has sent about ${sentToday(this.limitKey)} messages to ${this.sel.label} today (its own count; the site does not tell it your limit). A very busy day is what makes a site look at an account.\n[c]ontinue anyway / [s]top: `);
+      if (!/^c/i.test(answer)) throw new LimitError(this.name, '', { reason: 'has had a lot of messages today and you chose to stop', kind: 'skipped' });
+      this.overBudgetOk = true;
+    }
+    if ((this.failures ?? 0) >= 3) { this.failures = 0; throw new LimitError(this.name, '', { reason: 'failed three times in a row, so Eon stopped instead of trying again. Look at the browser window, rest a while, then try once', kind: 'skipped' }); }
+    if (this.failures) await this.#nap(backoffMs(this.failures));
+    try {
+      const reply = await this.#sendOnce(text, { images });
+      this.failures = 0;
+      countMessage(this.limitKey);
+      return reply;
+    } catch (e) {
+      if (!(e instanceof Interrupted) && !(e instanceof LimitError)) this.failures = (this.failures ?? 0) + 1;
+      throw e;
+    }
+  }
+
+  async #sendOnce(text, { images = [] } = {}) {
     if (images.length && !this.vision) throw new Error(`${this.sel.label} cannot see pictures (it only reads the text in them). Use a helper model that can: /model vision gemini`);
     this.aborted = false;
+    this.handoffs = 0;
+    if (paused.has(this.limitKey)) throw new LimitError(this.name, '', { reason: `showed a notice earlier ("${paused.get(this.limitKey)}"), so nothing more is sent to it`, kind: 'blocked' });
     await this.start();
     const wait = this.lastSend + this.minGapMs + Math.random() * this.jitterMs - Date.now();
     if (wait > 0) await this.#nap(wait);
@@ -557,6 +615,7 @@ export class WebChat {
       let fresh = { nodes: 0 };
       while (Date.now() < deadline && !(fresh = await this.#fresh(before)).nodes) await this.#nap(700);
       if (fresh.nodes) break;
+      { const notice = await this.#blocked(); if (notice) this.#halt(notice); }
       if (await this.#challenge(await this.#inputVisible(500))) { await this.#handoffChallenge(); continue; }
       const notice = looksLimited((await this.page.locator('body').innerText().catch(() => '')).slice(-600));
       if (notice) throw new LimitError(this.name, notice);

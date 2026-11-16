@@ -38,6 +38,16 @@ import { detectOllama, suggestModel } from '../src/local.js';
 import { diffReviewPrompt } from '../src/protocol.js';
 import { runChecks } from '../src/selftest.js';
 
+// Every test runs with a throwaway home. On Windows os.homedir() reads USERPROFILE, not HOME, so both are set;
+// without this, tests that save selectors or settings would write into the real ~/.eon of whoever runs them.
+const REAL_HOME = os.homedir();
+const REAL_SELECTORS = path.join(REAL_HOME, '.eon', 'selectors.json');
+const selectorsBefore = fs.existsSync(REAL_SELECTORS) ? fs.readFileSync(REAL_SELECTORS, 'utf8') : null;
+const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-test-home-'));
+process.env.HOME = TEST_HOME;
+process.env.USERPROFILE = TEST_HOME;
+process.env.EON_BUDGET = '0'; // the message count has its own tests
+
 const block = (obj) => `\`\`\`json\n${JSON.stringify(obj)}\n\`\`\``;
 
 function tempRepo() {
@@ -1020,7 +1030,7 @@ test('the doctor report holds no secrets, no file contents and no home folder pa
   const root = tempRepo();
   fs.writeFileSync(path.join(root, 'secret.txt'), 'TOPSECRETCONTENT');
   const saved = { ...process.env };
-  Object.assign(process.env, { HOME: home, EON_API_KEY: 'sk-supersecret-123', EON_PACE: 'slow' });
+  Object.assign(process.env, { HOME: home, USERPROFILE: home, EON_API_KEY: 'sk-supersecret-123', EON_PACE: 'slow' });
   try {
     fs.mkdirSync(path.join(home, '.eon'), { recursive: true });
     fs.writeFileSync(path.join(home, '.eon', 'last-error.txt'), `failed in ${home}/.eon/browser`);
@@ -1039,7 +1049,7 @@ test('text piped into a one-shot run becomes part of the task', () => {
   const root = tempRepo();
   fs.writeFileSync(path.join(root, 'script.json'), JSON.stringify([block({ action: 'done', summary: 'looked' })]));
   const eon = path.resolve(import.meta.dirname, '..', 'bin', 'eon.js');
-  execSync(`node ${eon} -p "review this" --stdin --mode research --model mock --script script.json`, { cwd: root, input: 'PIPED-MARKER-123 diff text', env: { ...process.env, HOME: root } });
+  execSync(`node ${eon} -p "review this" --stdin --mode research --model mock --script script.json`, { cwd: root, input: 'PIPED-MARKER-123 diff text', env: { ...process.env, HOME: root, USERPROFILE: root } });
   const chat = fs.readdirSync(path.join(root, '.eon', 'tasks')).map((id) => fs.readFileSync(path.join(root, '.eon', 'tasks', id, 'chat.jsonl'), 'utf8')).join('');
   assert.match(chat, /INPUT PIPED IN BY THE USER:\\nPIPED-MARKER-123 diff text/);
 });
@@ -1275,7 +1285,7 @@ test('--output-format json prints one result; it refuses to run without a safe m
   const root = tempRepo();
   fs.writeFileSync(path.join(root, 'script.json'), JSON.stringify([block({ action: 'done', summary: 'looked around' })]));
   const eon = path.resolve(import.meta.dirname, '..', 'bin', 'eon.js');
-  const run = (extra) => execSync(`node ${eon} -p "look" --model mock --script script.json ${extra}`, { cwd: root, env: { ...process.env, HOME: root }, encoding: 'utf8' });
+  const run = (extra) => execSync(`node ${eon} -p "look" --model mock --script script.json ${extra}`, { cwd: root, env: { ...process.env, HOME: root, USERPROFILE: root }, encoding: 'utf8' });
   const out = JSON.parse(run('--permission-mode plan --output-format json'));
   assert.deepEqual([out.status, out.summary], ['done', 'looked around']);
   assert.ok(out.session_id && out.confidence === 0 && out.plan === null);
@@ -1951,9 +1961,10 @@ test('doctor --fix repairs stale locks, damaged settings and a missing home, ask
   fs.writeFileSync(path.join(home, '.eon', 'chrome', 'SingletonLock'), '');
   fs.utimesSync(path.join(home, '.eon', 'chrome', 'SingletonLock'), old / 1000, old / 1000);
   let ran = '';
-  const deps = { root, home, alive: () => false, chrome: () => null, run: (cmd) => { ran = cmd; return true; } };
+  const deps = { root, home, alive: () => false, chrome: () => null, pwBrowser: () => null, run: (cmd) => { ran = cmd; return true; } };
   const ids = findProblems(deps).map((p) => p.id);
   assert.deepEqual(ids.sort(), ['bad:config.json', 'browser', 'chrome:SingletonLock', 'index-lock', 'session-lock:dead-session'].sort());
+  assert.ok(!findProblems({ ...deps, pwBrowser: () => '/x/chromium' }).some((p) => p.id === 'browser'), "Eon's own downloaded Chromium counts as a browser");
   // saying no changes nothing
   const asked = [];
   const no = await runFix({ ...deps, ask: async (q) => { asked.push(q); return 'n'; } });
@@ -2236,4 +2247,128 @@ test('"/" menu: every command and skill can be reached, matches are ranked, skil
   cli.feed('\r');
   assert.equal(await p, 'look at src/app.js');
   cli.close();
+});
+
+test('the tests never touched the real ~/.eon/selectors.json', () => {
+  assert.notEqual(os.homedir(), REAL_HOME, 'the home folder is a throwaway for this run');
+  const after = fs.existsSync(REAL_SELECTORS) ? fs.readFileSync(REAL_SELECTORS, 'utf8') : null;
+  assert.equal(after, selectorsBefore);
+});
+
+test('MCP: a command path with spaces is quoted for the Windows shell', async () => {
+  const { shellQuote } = await import('../src/mcp.js');
+  assert.equal(shellQuote('C:\\Program Files\\nodejs\\node.exe'), '"C:\\Program Files\\nodejs\\node.exe"');
+  assert.equal(shellQuote('server.js'), 'server.js');
+  assert.equal(shellQuote('a&b'), '"a&b"');
+  assert.equal(shellQuote('"already quoted"'), '"already quoted"');
+});
+
+test('a selector that points at the whole page is never saved, and one saved earlier is ignored', async () => {
+  const { badSelector, cleanSelectors, saveSelectors } = await import('../src/teach.js');
+  for (const bad of ['html.notranslate', 'html', 'body', 'body > div', ':root']) assert.ok(badSelector(bad), bad);
+  for (const ok of ['div.ds-markdown', '.reply', 'main .message', 'htmlish-reply']) assert.ok(!badSelector(ok), ok);
+  assert.deepEqual(cleanSelectors({ message: 'html.notranslate', input: 'textarea' }), { input: 'textarea' });
+  saveSelectors('zz-site', { message: 'html.notranslate' });
+  const file = path.join(os.homedir(), '.eon', 'selectors.json');
+  assert.ok(!fs.existsSync(file) || !JSON.parse(fs.readFileSync(file, 'utf8'))['zz-site'], 'nothing was written for a page-wide selector');
+  saveSelectors('zz-site', { message: '.reply' });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8'))['zz-site'].message, '.reply');
+});
+
+test('feature switches: sensible defaults, saved changes, and a cautious baseline', async () => {
+  const { FEATURES, resolveFeatures, setFeature, safeFeatures, applyFeatures } = await import('../src/features.js');
+  const defaults = resolveFeatures({});
+  assert.deepEqual([defaults.mcp, defaults.agents, defaults.rewrite, defaults.vision], [false, false, false, false], 'anything that adds extra messages starts off');
+  assert.equal(defaults.brief, true);
+  assert.equal(resolveFeatures({ rewrite: true }).rewrite, true, 'the older plain setting still counts');
+  assert.equal(setFeature('mcp', true).mcp, true);
+  assert.equal(resolveFeatures().mcp, true);
+  assert.throws(() => setFeature('nope', true), /unknown feature/);
+  const safe = safeFeatures();
+  assert.ok(Object.keys(FEATURES).every((k) => k in safe));
+  assert.deepEqual(Object.keys(safe).filter((k) => safe[k]), ['fallback']);
+  applyFeatures(Object.fromEntries(Object.entries(FEATURES).map(([k, v]) => [k, v.on])));
+  assert.equal(resolveFeatures().mcp, false);
+});
+
+test('with sub-agents and MCP switched off the model is not told about them, and the actions say so', async () => {
+  const { seedPrompt } = await import('../src/protocol.js');
+  const base = { mode: 'guided', level: 'focused', task: 'x', tree: '', digest: '' };
+  const on = seedPrompt({ ...base, delegate: true, mcp: ['files'] });
+  const off = seedPrompt({ ...base, delegate: false, mcp: [] });
+  assert.match(on, /"action":"delegate"/);
+  assert.match(on, /"action":"mcp_call"/);
+  assert.doesNotMatch(off, /"action":"delegate"|SUB-AGENTS|"action":"mcp_/);
+  const root = tempRepo();
+  const seen = [];
+  const provider = new MockProvider([
+    block({ action: 'delegate', task: 'look around' }) + '\n' + block({ action: 'mcp_describe', server: 'files' }),
+    (m) => { seen.push(m); return block({ action: 'done', summary: 'ok' }); },
+  ]);
+  await new Runtime({ root, provider, ui: new ScriptedUI(() => 'y'), mode: 'research', features: { agents: false, mcp: false } }).run('look');
+  assert.match(seen[0], /sub-agents are switched off/);
+  assert.match(seen[0], /MCP servers are switched off/);
+});
+
+test('the first message reads like a person wrote it, and the format markers are intact', async () => {
+  const { seedPrompt, FORMAT_REMINDER, REPROMPT, DIGEST_REQUEST } = await import('../src/protocol.js');
+  const p = seedPrompt({ mode: 'guided', level: 'focused', task: 'x', tree: '', digest: '' });
+  assert.match(p, /^Hi! You are the reasoning engine of Eon/);
+  assert.match(p, /Please write a sentence or two/);
+  assert.match(FORMAT_REMINDER, /Thanks!/);
+  assert.ok(REPROMPT.startsWith('I found no valid action'));
+  assert.match(DIGEST_REQUEST, /Could you reply with plain text only/);
+});
+
+test('bisect: always finds the one switch that matters, in at most log2(n)+2 trials', async () => {
+  const { newBisect, trial, record } = await import('../src/bisect.js');
+  const { SUSPECTS } = await import('../src/features.js');
+  for (const culprit of [...SUSPECTS, null]) {
+    let s = newBisect();
+    let trials = 0;
+    while (!s.result) {
+      const on = trial(s);
+      s = record(s, Boolean(culprit) && on.includes(culprit));
+      assert.ok(++trials <= Math.ceil(Math.log2(SUSPECTS.length)) + 2, `too many trials for ${culprit}`);
+    }
+    assert.equal(s.result.kind, culprit ? 'culprit' : 'none');
+    if (culprit) assert.equal(s.result.name, culprit);
+  }
+  const flaggedAtBaseline = record(newBisect(), true);
+  assert.equal(flaggedAtBaseline.result.kind, 'baseline');
+  assert.deepEqual(trial(newBisect()), [], 'the first trial is the cautious baseline');
+});
+
+test('eon bisect and eon features work from the command line and keep their state', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-bisect-'));
+  const bin = path.resolve(import.meta.dirname, '..', 'bin', 'eon.js');
+  const run = (...a) => execSync(`node ${bin} ${a.join(' ')}`, { cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: 'utf8' });
+  assert.match(run('--version'), /^\d+\.\d+\.\d+\s*$/);
+  assert.match(run('features'), /off\s+agents[\s\S]*off\s+mcp/);
+  assert.match(run('bisect'), /cautious baseline/);
+  assert.match(run('bisect', 'ok'), /Trial: switched on = /);
+  assert.ok(fs.existsSync(path.join(home, '.eon', 'bisect.json')));
+  let out = '';
+  for (let i = 0; i < 8 && !/Result/.test(out); i++) out = run('bisect', i % 2 ? 'ok' : 'flagged');
+  assert.match(run('bisect', 'reset'), /Search cleared/);
+});
+
+test('live tests rest between runs, and a repeat is refused unless asked for', async () => {
+  const { waitMinutes, markRun } = await import('../src/cooldown.js');
+  assert.equal(waitMinutes('check', 'siteA'), 0);
+  markRun('check', 'siteA', 1000);
+  assert.equal(waitMinutes('check', 'siteA', { now: 1000 + 3 * 60000 }), 7);
+  assert.equal(waitMinutes('check', 'siteA', { now: 1000 + 11 * 60000 }), 0);
+  assert.equal(waitMinutes('inspect', 'siteA'), 0, 'each kind rests on its own');
+});
+
+test('the daily message count and the back-off after failures', async () => {
+  const { sentToday, countMessage, budgetFor, backoffMs, DEFAULT_BUDGET } = await import('../src/budget.js');
+  assert.equal(sentToday('countsite'), 0);
+  countMessage('countsite'); countMessage('countsite');
+  assert.equal(sentToday('countsite'), 2);
+  assert.equal(budgetFor({}), DEFAULT_BUDGET);
+  assert.equal(budgetFor({ EON_BUDGET: '0' }), 0);
+  assert.equal(budgetFor({ EON_BUDGET: '25' }), 25);
+  assert.deepEqual([0, 1, 2, 3, 10].map(backoffMs), [0, 5000, 10000, 20000, 60000]);
 });

@@ -3,14 +3,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { findChrome } from './providers/web-chat.js';
+import { fileURLToPath } from 'node:url';
+import { findChrome, playwrightBrowser } from './providers/web-chat.js';
 
 const ageMs = (file, now) => { try { return now - fs.lstatSync(file).mtimeMs; } catch { return -1; } };
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 const validJson = (file) => { try { JSON.parse(fs.readFileSync(file, 'utf8')); return true; } catch { return false; } };
 
 /** Every problem Eon knows how to repair here: [{ id, text, fix() -> what was done }]. Nothing is changed by looking. */
-export function findProblems({ root, home = os.homedir(), now = Date.now(), alive = pidAlive, chrome = findChrome, run = (cmd) => spawnSync(cmd, { stdio: 'inherit', shell: true }).status === 0 } = {}) {
+export function findProblems({ root, home = os.homedir(), now = Date.now(), alive = pidAlive, chrome = findChrome, pwBrowser = playwrightBrowser, run = (cmd) => spawnSync(cmd, { stdio: 'inherit', shell: true, cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..') }).status === 0 } = {}) {
   const out = [];
   const eonHome = path.join(home, '.eon');
 
@@ -42,7 +43,7 @@ export function findProblems({ root, home = os.homedir(), now = Date.now(), aliv
     if (ageMs(f, now) > 10 * 60000) out.push({ id: `chrome:${name}`, text: `the Eon browser profile has a leftover ${name} (the browser was closed badly)`, fix: () => { fs.rmSync(f, { force: true }); return `removed ${name}`; } });
   }
 
-  if (!chrome()) out.push({ id: 'browser', text: 'no Chrome or Edge is installed, and Eon\'s own browser is not downloaded yet', fix: () => (run('npx playwright install chromium') ? 'downloaded the browser Eon uses' : 'the download failed; check your internet connection and run: npx playwright install chromium') });
+  if (!chrome() && !pwBrowser()) out.push({ id: 'browser', text: 'no Chrome or Edge is installed, and Eon\'s own browser is not downloaded yet', fix: () => (run('npx playwright install chromium') ? 'downloaded the browser Eon uses' : 'the download failed; check your internet connection and run: npx playwright install chromium') });
   return out;
 }
 

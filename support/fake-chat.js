@@ -22,7 +22,8 @@ const PAGE = (opts) => {
 [data-fake-send],.decoy{display:inline-block;vertical-align:middle;min-width:30px;min-height:30px;border:1px solid #666;margin-left:6px;cursor:pointer}</style></head><body>
 <div id="gate" ${opts.challenge ? '' : 'hidden'}><h1>Just a moment...</h1><p>Verify you are human to continue.</p><button id="human">I am human</button></div>
 <div id="loginwall" ${opts.login ? '' : 'hidden'}><h1>Log in</h1><input type="password" placeholder="Password"><p>Sign up · Forgot password</p></div>
-<div id="app" ${opts.challenge || opts.login ? 'hidden' : ''}>
+<div id="suspended" ${opts.suspended ? '' : 'hidden'}><h1>Account suspended</h1><p>Your account has been suspended until 2026-11-18 due to violation of user policies.</p></div>
+<div id="app" ${opts.challenge || opts.login || opts.suspended ? 'hidden' : ''}>
   ${opts.sidebar ? '<aside class="sidebar"><ul><li data-chat-id="9876543210" title="PRIVATE-CHAT-TITLE">PRIVATE-CHAT-TITLE My tax return</li><li>PRIVATE-CHAT-TWO</li></ul></aside>' : ''}
   ${opts.fileInput ? '<input type="file" id="fileinput" multiple style="display:none">' : ''}
   <div id="log"></div>

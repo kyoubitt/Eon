@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { findChrome, profileExists, sites } from './providers/web-chat.js';
+import { findChrome, playwrightBrowser, profileExists, sites } from './providers/web-chat.js';
 import { detectOllama } from './local.js';
 import { projectProblem } from './git.js';
 
@@ -30,12 +30,13 @@ export async function firstRunChecks({ root, site = 'deepseek', node = process.v
   add('git', git, git ? 'git is installed' : 'git is not installed (Eon still works, without branches)', git ? '' : 'Install git from git-scm.com for branches and /undo. Or work without git when Eon offers it.');
 
   const chrome = probe.chrome ?? findChrome();
-  add('browser', Boolean(chrome), chrome ? 'Chrome or Edge found' : 'no Chrome or Edge found (Eon will use its own browser)', chrome ? '' : 'Install Chrome or Edge for the most natural browser, or run: npm run setup', true);
+  const own = chrome ? null : (probe.playwright ?? playwrightBrowser());
+  add('browser', Boolean(chrome || own), chrome ? 'Chrome or Edge found' : own ? "Eon's own browser is installed (Chrome or Edge would be a little more natural)" : 'no browser found', chrome || own ? '' : 'Install Chrome or Edge, or run: npx playwright install chromium', true);
 
   const known = Boolean(sites()[site]);
   if (known) {
     const logged = probe.login ?? profileExists();
-    add('login', Boolean(logged), logged ? `logged in to ${sites()[site].label}` : `not logged in to ${sites()[site].label} yet`, logged ? '' : `Run: eon login ${site}   (a browser window opens; log in once)`);
+    add('login', Boolean(logged), logged ? `a saved browser profile for ${sites()[site].label} exists (run "eon check ${site}" to confirm you are logged in)` : `not logged in to ${sites()[site].label} yet`, logged ? '' : `Run: eon login ${site}   (a browser window opens; log in once)`);
   }
 
   const local = probe.ollama ?? await detectOllama().catch(() => ({ up: false, models: [] }));

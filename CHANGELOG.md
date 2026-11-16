@@ -2,6 +2,12 @@
 
 Versions follow `package.json`. Each release is published automatically from `main`.
 
+## 0.8.2
+- Gentler on accounts: the browser flags that hid automation are gone; Eon stops at once on a suspension or ban notice and sends nothing more to that site; a human check that keeps returning is not retried; a count of today's messages with a question before a very busy day; growing waits after failures and a stop after three; `eon check`, `eon inspect` and `eon teach` rest 10 minutes between runs (`--again` overrides); a plain warning at `eon login`.
+- Feature switches (`eon features`): `--rewrite`, sub-agents, MCP and the picture helper are off until you turn them on. `eon bisect` finds which switch upsets a site by elimination.
+- The first message is worded like a person wrote it; the action format and rules are unchanged.
+- Fixes found on a real Windows PC: tests no longer write into your real `~/.eon` (Windows reads `USERPROFILE`, not `HOME`); a reply selector that points at the whole page is never saved and one saved earlier is ignored; `doctor --fix` counts Eon's own downloaded browser; MCP commands with spaces in the path now start on Windows; first-run no longer claims you are logged in; `eon login` says the window can be closed and a still-open window gets a plain message; `eon --version`; `eon hepl` is caught as a typo.
+
 ## 0.8.1
 - Typing `/` opens a scrolling menu of every command and skill, ranked as you type (`/sec` finds `security-review`, `/tokens` finds `/usage`); skills are labelled and picking one inserts it ready for your request.
 

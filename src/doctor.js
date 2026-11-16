@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { findChrome, sites } from './providers/web-chat.js';
+import { findChrome, playwrightBrowser, sites } from './providers/web-chat.js';
 import { isRepo, hasCommits, listFiles } from './git.js';
 import { listSessions } from './sessions.js';
 import { projectInstructions, detectCommands } from './project.js';
@@ -25,7 +25,7 @@ export function doctorReport(root, { now = new Date() } = {}) {
   const exists = (p) => (fs.existsSync(p) ? 'yes' : 'no');
   const L = [`Eon doctor report, ${now.toISOString()}`, ''];
   L.push('SYSTEM', `  node ${process.version}, ${process.platform} ${process.arch}`, `  git: ${tool('git', ['--version'])}`, `  playwright: ${playwright}`,
-    `  browser: ${chrome ? `${mask(chrome)} (attach mode)` : "not found, will use Playwright's Chromium"}`,
+    `  browser: ${chrome ? `${mask(chrome)} (attach mode)` : `no Chrome or Edge; Eon's own Chromium ${playwrightBrowser() ? 'is installed' : 'is NOT downloaded (npx playwright install chromium)'}`}`,
     `  saved logins: attach profile ${exists(path.join(eonHome, 'chrome'))}, playwright profile ${exists(path.join(eonHome, 'browser'))}`);
   const set = SETTINGS.filter((k) => process.env[k]).map((k) => `${k}=${process.env[k]}`);
   L.push(`  settings: ${set.join(', ') || '(defaults)'}`, `  api model configured: ${process.env.EON_API_MODEL ? 'yes' : 'no'}, api key set: ${process.env.EON_API_KEY ? 'yes' : 'no'}`, '');

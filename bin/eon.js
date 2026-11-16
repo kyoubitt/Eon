@@ -13,6 +13,10 @@ import { WebChat, closeBrowser, sites, profileExists } from '../src/providers/we
 import { ModelPool } from '../src/providers/limits.js';
 import { killRunning, runCommand, redact } from '../src/tools.js';
 import { readConfig, writeConfig, listAllow, addAllow, removeAllow } from '../src/settings.js';
+import { todayCounts, budgetFor } from '../src/budget.js';
+import { waitMinutes, markRun } from '../src/cooldown.js';
+import { newBisect, trial, record, roundsLeft, loadBisect, saveBisect, clearBisect } from '../src/bisect.js';
+import { FEATURES, SUSPECTS, resolveFeatures, setFeature, safeFeatures, applyFeatures } from '../src/features.js';
 import { memoryFiles, loadMemory, appendMemory } from '../src/memory.js';
 import { detectOllama, setupLocal } from '../src/local.js';
 import { expandMentions } from '../src/mentions.js';
@@ -162,6 +166,7 @@ function parse(argv) {
     else if (a === '--report') opts.report = true;
     else if (a === '--fix') opts.fix = true;
     else if (a === '--stand-in') opts.standIn = true;
+    else if (a === '--again') opts.again = true;
     else if (a === '--fast') opts.fast = true;
     else if (a === '--no-brief') opts.noBrief = true;
     else if (a === '--rewrite') opts.rewrite = true;
@@ -187,6 +192,7 @@ function parse(argv) {
   // --fast: fewer round trips for small jobs (small edits skip the plan; you approve the plan once if one is made, edits go in).
   if (opts.fast) { opts.level = 'quick'; if (opts.mode === 'guided') opts.mode = 'accept'; }
   if (opts.pace) process.env.EON_PACE = opts.pace;
+  if (!process.env.EON_PACE && !resolveFeatures().lean) process.env.EON_PACE = 'slow';
   if (!MODES.includes(opts.mode)) throw new Error(`unknown mode "${opts.mode}" (use ${MODES.join(', ')})`);
   if (!LEVELS.includes(opts.level)) throw new Error(`unknown level "${opts.level}" (use ${LEVELS.join(', ')})`);
   return opts;
@@ -216,8 +222,9 @@ async function loginSite(site, ui) {
   const chat = new WebChat(site, { ui });
   await chat.start();
   await chat.page.goto(chat.sel.url);
+  ui.print?.(`A note before you log in: scripted use of a free chat can go against that site's terms, and a site may suspend an account it sees as automated. Use an account you can afford to lose, keep tests few, and stop at any check or warning.`);
   await ui.ask(`Log in to ${chat.sel.label} in the browser window. When you can see the chat, press Enter here. `);
-  ui.print?.('Login saved. Your browser keeps it for next time.');
+  ui.print?.('Login saved. Your browser keeps it for next time. You can close the browser window now; Eon opens it again when needed.');
 }
 
 async function siteCommands(first, rest, opts) {
@@ -259,6 +266,7 @@ async function siteCommands(first, rest, opts) {
     if (opts.standIn) {
       // The built-in fake sites, one per supported chat: proves the driver and the scenarios without a login.
       process.env.EON_HEADLESS ??= '1';
+      process.env.EON_BUDGET ??= '0';
       let fakes;
       try { fakes = await import('../support/fake-chat.js'); } catch { console.log('The stand-in sites are not part of this install (the support folder is missing).'); process.exitCode = 1; return; }
       const names = rest[0] ? [rest[0]] : Object.keys(fakes.PROFILES);
@@ -276,7 +284,10 @@ async function siteCommands(first, rest, opts) {
       }
     } else {
       const site = rest[0] ?? 'deepseek';
-      console.log(`Testing ${site} with five short messages (about a minute or two). A browser window opens; log in if asked.\n`);
+      const left = waitMinutes('harness', site);
+      if (left && !opts.again) { console.log(`The harness already ran on ${site} a few minutes ago. It sends about 6 real messages, and repeating that is what upsets a site.\nWait about ${left} more minute${left === 1 ? '' : 's'}, or run it anyway with --again.`); return; }
+      markRun('harness', site);
+      console.log(`Testing ${site} with about 6 short messages (a minute or two). A browser window opens; log in if asked.\n`);
       const chat = new WebChat(site, { ui });
       try {
         await chat.newChat();
@@ -309,6 +320,11 @@ async function siteCommands(first, rest, opts) {
     return;
   }
   const site = rest[0] ?? 'deepseek';
+  if (['inspect', 'check', 'teach'].includes(first) && site !== 'api') {
+    const left = waitMinutes(first, site);
+    if (left && !opts.again) { console.log(`This test already ran on ${site} a few minutes ago. Each run sends real messages, and repeating them is what upsets a site.\nWait about ${left} more minute${left === 1 ? '' : 's'}, or run it anyway with --again.`); return; }
+    markRun(first, site);
+  }
   try {
     if (first === 'inspect') {
       console.log(`Inspecting ${site}. A browser window opens; log in if asked. This sends one short message and takes about a minute.`);
@@ -324,7 +340,7 @@ async function siteCommands(first, rest, opts) {
         if (!got) return;
         console.log('\nSaved. Testing it now...');
       }
-      console.log(`Checking ${site}. This sends a few real messages and can take a minute or two.`);
+      console.log(`Checking ${site}. This sends about 4 real messages and takes a minute or two.`);
       const stages = await runChecks(site, ui, { WebChat, edit: !opts.noEdit });
       stages.forEach((st, i) => console.log(`  ${st.ok ? color.green('✓') : color.red('✗')} ${i + 1}. ${st.text}${st.fix ? color.dim(`\n       to fix it: ${st.fix}`) : ''}`));
       const ok = stages.every((st) => st.ok);
@@ -365,12 +381,44 @@ async function main() {
     } else console.log('Usage: eon mcp list | add <name> [command args...] | remove <name> | test <name>');
     return;
   }
+  if (first === 'features') {
+    const [verb, name] = rest;
+    try {
+      if (verb === 'on' || verb === 'off') { setFeature(name, verb === 'on'); if (verb === 'on' && ['rewrite', 'agents', 'vision', 'mcp'].includes(name)) console.log('Note: this can send extra messages to your chat site.'); }
+      else if (verb === 'safe') { applyFeatures(safeFeatures()); console.log('Cautious baseline: every optional behaviour is off and the slow pace is used.'); }
+      else if (verb === 'reset') { const c = readConfig(); delete c.features; writeConfig({ features: undefined }); }
+      else if (verb) { console.log('Usage: eon features | on <name> | off <name> | safe | reset'); return; }
+    } catch (e) { console.log(e.message); process.exitCode = 1; return; }
+    const on = resolveFeatures();
+    console.log(`${color.bold('Switches')}\n${Object.entries(FEATURES).map(([k, v]) => `  ${on[k] ? color.green('on ') : color.dim('off')}  ${k.padEnd(9)} ${v.about}`).join('\n')}\n${color.dim('Change one: eon features on <name> | off <name> | safe | reset. To track down a problem: eon bisect')}`);
+    return;
+  }
+  if (first === 'bisect') {
+    const verb = rest[0];
+    if (verb === 'reset') { clearBisect(); applyFeatures(Object.fromEntries(Object.entries(FEATURES).map(([k, v]) => [k, v.on]))); console.log('Search cleared and the switches are back to their defaults.'); return; }
+    let state = loadBisect();
+    if (!state || verb === 'start') { state = newBisect(); applyFeatures(safeFeatures()); saveBisect(state); }
+    else if (verb === 'ok' || verb === 'flagged') { state = record(state, verb === 'flagged'); saveBisect(state); }
+    if (state.result) {
+      console.log(`${color.bold('Result')}\n  ${state.result.text}`);
+      if (state.result.kind === 'culprit') applyFeatures({ ...Object.fromEntries(SUSPECTS.map((k) => [k, true])), [state.result.name]: false });
+      return;
+    }
+    const on = trial(state);
+    applyFeatures({ ...safeFeatures(), ...Object.fromEntries(on.map((k) => [k, true])) });
+    console.log(`${color.bold('Finding what upsets the site')}  (at most ${roundsLeft(state)} trial${roundsLeft(state) === 1 ? '' : 's'} left)`);
+    console.log(state.phase === 'baseline'
+      ? '  Trial: the cautious baseline. Everything optional is off.'
+      : `  Trial: switched on = ${on.join(', ') || 'nothing'}\n  Still under suspicion: ${state.candidates.join(', ')}`);
+    console.log('  Use a throwaway account. Run: eon check <site> three times, at least 10 minutes apart, then work normally for a day.\n  Then tell me how the account did:  eon bisect ok   or   eon bisect flagged   (flagged = a check, warning or suspension)\n  Stop any time with: eon bisect reset');
+    return;
+  }
   if (first === 'gui' || first === 'web') { console.log('There is no gui any more; just run eon. It works inside the terminal.'); return; }
   if (['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export', 'harness'].includes(first)) return siteCommands(first, rest, opts);
 
   // One word that is almost a command ("eon udpate") is probably a typo, not a task.
   if (opts.words.length === 1 && /^[a-z-]{3,12}$/.test(first)) {
-    const known = ['sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export', 'mcp', 'help', 'run'];
+    const known = ['features', 'bisect', 'sites', 'login', 'check', 'teach', 'doctor', 'setup-local', 'inspect', 'first-run', 'update', 'export', 'mcp', 'help', 'run'];
     const dist = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
     const near = known.find((k) => k !== first && dist(first, k) <= 2 && dist(first, k) <= first.length / 2);
     if (near && !known.includes(first)) { console.log(`Did you mean: eon ${near}\n(To use "${first}" as a task, put it in quotes with more words, for example: eon "${first} the readme".)`); return; }
@@ -421,13 +469,13 @@ async function main() {
   let lastResult = null;
   const shellContext = [];
   const pendingPictures = [];
-  const makeRuntime = (extra = {}) => new Runtime({
+  const makeRuntime = (extra = {}) => { const feats = resolveFeatures(); return new Runtime({
     root, models: models(), ui, reviewer: reviewerFor(opts.level), researcher: researcherFor(),
-    allow: opts.allow, allowHosts: opts.allowHost, mode: opts.mode, level: opts.level, inPlace: opts.inPlace, noGit: opts.noGit, brief: !opts.noBrief && config.brief !== false, rewrite: Boolean(opts.rewrite || config.rewrite === true),
+    allow: opts.allow, allowHosts: opts.allowHost, mode: opts.mode, level: opts.level, inPlace: opts.inPlace, noGit: opts.noGit, features: feats, brief: !opts.noBrief && feats.brief, rewrite: Boolean(opts.rewrite || feats.rewrite),
     // A sub-agent gets its own browser tab, so the main chat is not disturbed.
-    visionFactory: () => { try { return pool('vision', visionSpec(), opts.script, 'vision'); } catch { return null; } },
-    agentFactory: (spec) => { try { return pool('agent', spec ?? firstOf(planSpec()), opts.script, 'sub-agent'); } catch { return null; } }, ...extra,
-  });
+    visionFactory: !feats.vision ? null : () => { try { return pool('vision', visionSpec(), opts.script, 'vision'); } catch { return null; } },
+    agentFactory: !feats.agents ? null : (spec) => { try { return pool('agent', spec ?? firstOf(planSpec()), opts.script, 'sub-agent'); } catch { return null; } }, ...extra,
+  }); };
   const idle = (extra = {}) => ui.update?.({ mode: opts.mode, level: opts.level, models: modelsInfo(), dir: path.basename(root), phase: 'idle', busy: false, session: false, ...extra });
 
   // The "/" menu lists the commands and then the skills (built in, yours and the project's).
@@ -684,7 +732,7 @@ async function main() {
         const row = (m, r) => `  ${m.padEnd(12)}${String(r.messages).padStart(9)}${n(r.tokensIn).padStart(12)}${n(r.tokensOut).padStart(12)}${`${Math.round(r.ms / 60000)} min`.padStart(8)}`;
         const peak = Math.max(1, ...rows.map((r) => r.tokensIn + r.tokensOut));
         const bar = (r) => { const n = Math.round(((r.tokensIn + r.tokensOut) / peak) * 24); return `${color.cyan('█'.repeat(n))}${color.dim('░'.repeat(24 - n))}`; };
-        return say('Usage (estimate)', `${head}\n${rows.map((r) => `${row(r.model, r)}  ${bar(r)}`).join('\n')}${rows.length > 1 ? `\n${row('total', total)}` : ''}\n${color.dim('  Web chats do not report tokens or what is left of the free quota. This counts characters / 4, so it is a rough guide.')}`);
+        return say('Usage (estimate)', `${head}\n${rows.map((r) => `${row(r.model, r)}  ${bar(r)}`).join('\n')}${rows.length > 1 ? `\n${row('total', total)}` : ''}\n${(() => { const t = todayCounts(), b = budgetFor(); const e = Object.entries(t); return e.length ? color.dim(`  Sent today, all sessions (Eon's own count${b ? `, it asks before ${b}` : ''}): ${e.map(([k, v]) => `${k} ${v}`).join(', ')}`) : ''; })()}\n${color.dim('  Web chats do not report tokens or what is left of the free quota. This counts characters / 4, so it is a rough guide.')}`);
       }
       case '/raw': {
         const ex = runtime?.store?.lastExchange();
