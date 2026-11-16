@@ -43,6 +43,8 @@ import { runChecks } from '../src/selftest.js';
 const REAL_HOME = os.homedir();
 const REAL_SELECTORS = path.join(REAL_HOME, '.eon', 'selectors.json');
 const selectorsBefore = fs.existsSync(REAL_SELECTORS) ? fs.readFileSync(REAL_SELECTORS, 'utf8') : null;
+// Playwright finds its downloaded browser relative to the home folder, so pin that location before the home changes.
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH && process.platform !== 'win32') process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(REAL_HOME, process.platform === 'darwin' ? 'Library/Caches/ms-playwright' : '.cache/ms-playwright');
 const TEST_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-test-home-'));
 process.env.HOME = TEST_HOME;
 process.env.USERPROFILE = TEST_HOME;

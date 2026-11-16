@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { startFakeChat } from '../support/fake-chat.js';
 
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH && process.platform !== 'win32') process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(os.homedir(), process.platform === 'darwin' ? 'Library/Caches/ms-playwright' : '.cache/ms-playwright'); // found relative to the home folder, which is about to change
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'eon-web-home-'));
 process.env.HOME = home;
 process.env.USERPROFILE = home; // Windows reads this, not HOME
